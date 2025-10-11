@@ -1,0 +1,58 @@
+{
+  "name": "iusacademy-backend",
+  "version": "1.0.0",
+  "description": "Backend API para IUSAcademy con Node.js, Express, TypeScript, Prisma y PostgreSQL",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:studio": "prisma studio",
+    "db:deploy:test": "dotenv -e .env.test -- npx prisma migrate deploy",
+    "db:reset:test": "dotenv -e .env.test -- npx prisma migrate reset --force --skip-generate",
+    "db:push:test": "dotenv -e .env.test -- npx prisma db push",
+    "test": "jest --runInBand",
+    "pretest": "npm run db:deploy:test"
+  },
+  "keywords": [
+    "nodejs",
+    "express",
+    "typescript",
+    "prisma",
+    "postgresql",
+    "backend",
+    "iusacademy"
+  ],
+  "author": "Johanna Claros",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^6.17.0",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.7.0",
+    "@types/supertest": "^6.0.3",
+    "dotenv": "^17.2.3",
+    "dotenv-cli": "^10.0.0",
+    "jest": "^30.2.0",
+    "prisma": "^6.17.0",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.4",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,44 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/**
+ * Roles del sistema:
+ * - ADMIN: administración del sistema
+ * - DOCENTE: profesor/a
+ * - ESTUDIANTE: alumno/a
+ */
+enum Role {
+  ADMIN
+  DOCENTE
+  ESTUDIANTE
+}
+
+/**
+ * Tabla de usuarios
+ * - username y email son únicos
+ * - passwordHash guarda la contraseña encriptada
+ */
+model User {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastName     String
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(DOCENTE)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")              // opcional: nombre de tabla en la DB
+  @@index([username])
+  @@index([email])
+}
