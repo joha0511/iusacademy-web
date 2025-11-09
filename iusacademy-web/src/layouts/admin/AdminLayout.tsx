@@ -1,197 +1,132 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { meApi, logoutApi } from "@/api"; // asegúrate de tener este archivo
+// src/layouts/admin/AdminLayout.tsx
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import {
+  Home, User as UserIcon, Settings, FilePlus2, UserPlus,
+  LogOut, UserRound, ChevronLeft, ChevronRight
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { meApi, logoutApi } from "../../services/auth";
 
-type User = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  username: string;
-  email: string;
-  role: string;
-};
+type MenuItem = { to: string; label: string; icon: LucideIcon; end?: boolean; disabled?: boolean; badge?: number; };
 
 export default function AdminLayout() {
-  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [firstName, setFirstName] = useState(""); 
+  const [lastName, setLastName] = useState("");
+  const navigate = useNavigate();
 
-  // ✅ Obtener usuario autenticado desde el backend
-  useEffect(() => {
-    (async () => {
-      try {
-        const me = await meApi();
-        if (!me) {
-          navigate("/login", { replace: true });
-          return;
-        }
-        setUser(me);
-      } catch {
-        navigate("/login", { replace: true });
-      }
-    })();
-  }, [navigate]);
+  useEffect(() => { (async () => {
+    const me = await meApi(); 
+    if (!me) return navigate("/login", { replace: true });
+    setFirstName(me.firstName || ""); 
+    setLastName(me.lastName || "");
+  })(); }, [navigate]);
 
-  // ✅ Logout
-  const logout = async () => {
-    try {
-      await logoutApi();
-    } finally {
-      navigate("/login", { replace: true });
-    }
-  };
+  // Saludo
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    return h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches";
+  }, []);
+
+  // 👉 Solo primer nombre y primer apellido
+  const firstToken = (firstName || "").trim().split(/\s+/)[0] ?? "";
+  const lastToken  = (lastName  || "").trim().split(/\s+/)[0] ?? "";
+  const displayName = (firstToken || lastToken) ? `${firstToken} ${lastToken}`.trim() : "Administrador";
+
+  const menu: MenuItem[] = [
+    { to: "/admin", label: "Inicio", icon: Home, end: true },
+    { to: "/admin/crear-usuario", label: "Crear usuario", icon: UserPlus },
+    { to: "/admin/crear-proceso", label: "Crear proceso", icon: FilePlus2 },
+    { to: "/admin/perfil", label: "Perfil", icon: UserIcon },
+    { to: "/admin/ajustes", label: "Ajustes", icon: Settings },
+  ];
 
   return (
-    <div className={`admin-wrap${collapsed ? " is-collapsed" : ""}`}>
-      <aside className="admin-sb">
-        {/* Header */}
-        <div className="admin-sb__brand">
-          <div className="admin-sb__avatar">IA</div>
-          {!collapsed && (
-            <div className="admin-sb__name">
-              <strong>
-                {user
-                  ? `${user.firstName.split(" ")[0]} ${user.lastName.split(" ")[0]}`
-                  : "Cargando..."}
-              </strong>
-              <span className="muted">@{user?.username ?? "usuario"}</span>
-            </div>
-          )}
-          <button
-            className="sb-toggle"
-            onClick={() => setCollapsed((s) => !s)}
-            aria-label={collapsed ? "Expandir menú" : "Minimizar menú"}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24">
-              {collapsed ? (
-                <path d="M7 12l5 5 5-5H7z" fill="currentColor" />
-              ) : (
-                <path d="M7 10l5-5 5 5H7zm0 4h10l-5 5-5-5z" fill="currentColor" />
-              )}
-            </svg>
+    <div className={`admin-layout page ${collapsed ? "is-collapsed" : ""}`}>
+      <aside className="aside" aria-label="Menú principal administrador">
+        <div className="header">
+          <div className="avatar"><UserRound size={22} /></div>
+          <div className="hello">
+            {/* ✨ solo estrellitas al lado del saludo */}
+            <span className="hi">{greeting} <span aria-hidden className="sparkle">✨</span></span>
+            <strong className="who">{displayName}</strong>
+          </div>
+          <button className="toggle" onClick={() => setCollapsed(s => !s)} title={collapsed ? "Expandir" : "Colapsar"}>
+            {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
         </div>
 
-        {/* Navegación */}
-        <nav className="admin-sb__nav">
-          <SBLink to="/admin" label="Inicio" collapsed={collapsed} end>
-            <svg viewBox="0 0 24 24" width="20" height="20">
-              <path
-                d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3l9-8z"
-                fill="currentColor"
-              />
-            </svg>
-          </SBLink>
+        <div className="section-title">MENÚ</div>
 
-          <SBLink to="/admin/perfil" label="Perfil" collapsed={collapsed}>
-            <svg viewBox="0 0 24 24" width="20" height="20">
-              <path
-                d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.3-8 5v1h16v-1c0-2.7-3.6-5-8-5z"
-                fill="currentColor"
-              />
-            </svg>
-          </SBLink>
-
-          <SBLink to="/admin/crear-usuario" label="Usuario" collapsed={collapsed}>
-            <svg viewBox="0 0 24 24" width="20" height="20">
-              <path
-                d="M16 11a4 4 0 10-3.9-5 6 6 0 00-6.5 6V14h6v-2a4 4 0 014.4-1zM2 18v2h20v-2c0-3.3-6.7-5-10-5S2 14.7 2 18z"
-                fill="currentColor"
-              />
-            </svg>
-          </SBLink>
-
-          <SBLink to="/admin/crear-proceso" label="Proceso" collapsed={collapsed}>
-            <svg viewBox="0 0 24 24" width="20" height="20">
-              <path
-                d="M9 3h6a2 2 0 012 2v1h3a2 2 0 012 2v4h-9v2h9v5a2 2 0 01-2 2H4a2 2 0 01-2-2v-5h9v-2H2V8a2 2 0 012-2h3V5a2 2 0 012-2zm6 3V5H9v1h6z"
-                fill="currentColor"
-              />
-            </svg>
-          </SBLink>
-
-          <SBLink to="/admin/ajustes" label="Ajustes" collapsed={collapsed}>
-            <svg viewBox="0 0 24 24" width="20" height="20">
-              <path
-                d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.9 4a6.9 6.9 0 00-.1-1l2-1.6-2-3.4-2.4 1a7.3 7.3 0 00-1.7-1L14.2 2h-4.4L8.3 5a7.3 7.3 0 00-1.7 1l-2.4-1-2 3.4 2 1.6a6.9 6.9 0 000 2L2.2 15l2 3.4 2.4-1a7.3 7.3 0 001.7 1l1.5 3h4.4l1.5-3a7.3 7.3 0 001.7-1l2.4 1 2-3.4-2-1.6a6.9 6.9 0 00.1-1z"
-                fill="currentColor"
-              />
-            </svg>
-          </SBLink>
+        <nav className="nav">
+          {menu.map(({ to, label, icon: Icon, end, disabled, badge }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) => `item ${isActive ? "active" : ""} ${disabled ? "disabled" : ""}`}
+              onClick={e => disabled && e.preventDefault()}
+              title={collapsed ? label : undefined}
+            >
+              <Icon className="ic" size={18} />
+              <span className="txt">{label}</span>
+              {!collapsed && typeof badge === "number" && badge > 0 && <span className="pill">{badge}</span>}
+            </NavLink>
+          ))}
         </nav>
 
-        {/* Logout */}
-        <button className="sb-logout" onClick={logout}>
-          <svg viewBox="0 0 24 24" width="20" height="20">
-            <path
-              d="M10 17l1.4-1.4-2.6-2.6H21v-2H8.8l2.6-2.6L10 7l-5 5 5 5z"
-              fill="currentColor"
-            />
-            <path
-              d="M4 4h8V2H4a2 2 0 00-2 2v16a2 2 0 002 2h8v-2H4V4z"
-              fill="currentColor"
-            />
-          </svg>
-          {!collapsed && <span>Cerrar sesión</span>}
+        <button className="logout" onClick={async () => { await logoutApi(); navigate("/login", { replace: true }); }}>
+          <LogOut className="ic" size={18} /><span className="txt">Salir</span>
         </button>
       </aside>
 
-      <main className="admin-main">
-        <Outlet />
-      </main>
+      <section className="content"><Outlet /></section>
 
-      {/* Estilos conservados */}
-      <style>{`
-        :root{
-          --bg:#FFF8F5; --text:#1E1E1E; --sub:#6B6B6B;
-          --primary:#FF8A4C; --accent:#E36C2D;
-          --border:#F3D7C8; --soft:#FFE3D3; --white:#fff;
-        }
-        .admin-wrap{ min-height:100vh; display:grid; grid-template-columns:260px 1fr; background:var(--bg); transition:grid-template-columns .2s ease; }
-        .admin-wrap.is-collapsed{ grid-template-columns:84px 1fr; }
-        .admin-sb{ position:sticky; top:0; height:100vh; background:var(--white); border-right:1px solid var(--border); padding:1rem; display:flex; flex-direction:column; gap:1rem; }
-        .admin-sb__brand{ display:flex; align-items:center; gap:.75rem; padding:.25rem; }
-        .admin-sb__avatar{ width:44px; height:44px; border-radius:12px; display:grid; place-items:center; font-weight:900; color:#fff; background:var(--primary); }
-        .admin-sb__name{ display:flex; flex-direction:column; line-height:1.1; }
-        .muted{ color:var(--sub); font-size:.85rem; }
-        .sb-toggle{ margin-left:auto; border:1px solid var(--border); background:#fff; color:#6b6b6b; border-radius:.6rem; padding:.35rem; cursor:pointer; }
-        .admin-sb__nav{ display:flex; flex-direction:column; gap:.25rem; margin-top:.5rem; }
-        .sb-link{ display:flex; align-items:center; gap:.75rem; padding:.65rem .9rem; border-radius:.7rem; color:#514f4d; text-decoration:none; font-weight:700; transition:background .2s, color .2s; }
-        .sb-link:hover{ background:var(--soft); color:var(--text); }
-        .sb-link.active{ background:var(--primary); color:#fff; }
-        .admin-wrap.is-collapsed .sb-link{ justify-content:center; padding:.65rem .5rem; }
-        .admin-wrap.is-collapsed .sb-link span{ display:none; }
-        .sb-logout{ margin-top:auto; border:1px solid var(--border); background:#fff; color:#b0361e; font-weight:800; padding:.7rem .9rem; border-radius:.7rem; cursor:pointer; display:flex; align-items:center; gap:.5rem; }
-        .sb-logout:hover{ background:#fff1ec; border-color:#ffcbb9; }
-        .admin-main{ padding:1.25rem; }
-      `}</style>
+      <style>{layoutStyles}</style>
     </div>
   );
 }
 
-/** 🔹 Componente para los enlaces del menú */
-function SBLink({
-  to,
-  label,
-  children,
-  collapsed,
-  end,
-}: {
-  to: string;
-  label: string;
-  children: React.ReactNode;
-  collapsed: boolean;
-  end?: boolean;
-}) {
-  return (
-    <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) => "sb-link" + (isActive ? " active" : "")}
-      title={collapsed ? label : undefined}
-    >
-      {children}
-      <span>{label}</span>
-    </NavLink>
-  );
+const layoutStyles = `
+.admin-layout .page{ min-height:100vh; background:#fff; overflow-x:hidden; }
+.admin-layout .aside{
+  position:fixed; top:20px; left:20px;
+  width:250px; height:calc(100vh - 40px);
+  background:#fff; box-shadow:0 24px 60px rgba(0,0,0,.12);
+  border-radius:22px; padding:12px;
+  display:flex; flex-direction:column; gap:8px; overflow:hidden; z-index:10;
 }
+.admin-layout.is-collapsed .aside{ width:85px; }
+.admin-layout .content{ margin-left:calc(250px + 40px); padding:4px 8px 24px 0; }
+.admin-layout.is-collapsed .content{ margin-left:calc(85px + 40px); }
+
+.admin-layout .header{ display:grid; grid-template-columns:44px 1fr 30px; align-items:center; gap:8px; }
+.admin-layout.is-collapsed .header{ grid-template-columns:44px 30px; }
+.admin-layout .avatar{ width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:#FFE3D3;border:1px solid #f6d7c6;color:#8a4d2b; }
+.admin-layout .hello{ line-height:1.05; min-width:0; }
+.admin-layout .hi{ color:#6B6B6B; font-size:.82rem; display:inline-flex; align-items:center; gap:6px; }
+.admin-layout .sparkle{ display:inline-block; transform:translateY(-1px); }
+.admin-layout .who{ color:#1E1E1E; font-weight:800; white-space:nowrap; display:block; }
+.admin-layout.is-collapsed .hello{ display:none; }
+
+.admin-layout .toggle{ border:none; background:none; cursor:pointer; color:#FF8A4C; }
+.admin-layout .section-title{ margin:4px 0;font-size:.78rem;letter-spacing:.12em;color:#8a8a8a;font-weight:800; }
+.admin-layout.is-collapsed .section-title{ text-align:center; }
+
+.admin-layout .nav{ display:flex; flex-direction:column; gap:2px; flex:1; }
+.admin-layout .item{ display:flex; align-items:center; gap:10px; padding:8px; border-radius:14px; color:#4d4d4d; font-weight:600; text-decoration:none; }
+.admin-layout .item:hover .txt, .admin-layout .item:hover .ic{ color:#FF8A4C; }
+.admin-layout .item.active .txt, .admin-layout .item.active .ic{ color:#E36C2D; }
+.admin-layout .item.disabled{ opacity:.55; cursor:not-allowed; }
+
+.admin-layout .ic{ flex-shrink:0; }
+.admin-layout .txt{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.admin-layout.is-collapsed .txt{ display:none; }
+
+.admin-layout .pill{ margin-left:auto; background:#ffefe7; border:1px solid #ffd7c2; color:#8a4d2b; border-radius:999px; padding:0 8px; font-size:.75rem; min-width:20px; height:20px; display:grid;place-items:center; }
+.admin-layout.is-collapsed .pill{ display:none; }
+
+.admin-layout .logout{ margin-top:auto; display:flex;align-items:center;gap:10px; padding:8px;border-radius:14px;font-weight:700; color:#E36C2D; background:none; border:none; cursor:pointer; }
+.admin-layout .logout:hover{ color:#FF8A4C; }
+`;

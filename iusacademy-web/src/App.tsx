@@ -26,6 +26,14 @@ import AdminCrearProceso from "./pages/admin/AdminCrearProceso";
 import AdminPerfil from "./pages/admin/AdminPerfil";
 import AdminAjustes from "./pages/admin/AdminAjustes";
 
+//Estudiante
+import EstudianteLayout from "./layouts/estudiante/EstudianteLayout";
+import EstudianteHome from "./pages/estudiante/EstudianteHome";
+import EstudianteTareas from "./pages/estudiante/EstudianteTareas";
+import EstudianteSimulacion from "./pages/estudiante/EstudianteSimulacion";
+import EstudianteCalendario from "./pages/estudiante/EstudianteCalendario";
+import EstudiantePerfil from "./pages/estudiante/EstudiantePerfil";
+
 export default function App() {
   return (
     <div className="min-h-screen bg-white">
@@ -46,6 +54,15 @@ export default function App() {
           <Route path="crear-usuario" element={<AdminCrearUsuario />} />
           <Route path="crear-proceso" element={<AdminCrearProceso />} />
           <Route path="ajustes" element={<AdminAjustes />} />
+        </Route>
+
+        {/* Rutas de Estudiante con sidebar vertical */}
+        <Route path="/estudiante" element={<EstudianteLayout />}>
+          <Route index element={<EstudianteHome />} />
+          <Route path="tareas" element={<EstudianteTareas />} />
+          <Route path="simulacion" element={<EstudianteSimulacion />} />
+          <Route path="calendario" element={<EstudianteCalendario />} />
+          <Route path="perfil" element={<EstudiantePerfil />} />
         </Route>
 
         {/* 404 */}

@@ -1,50 +1,31 @@
+// src/pages/admin/AdminCrearUsuario.tsx
 import { useEffect, useMemo, useState } from "react";
 
 /** ========= Config ========= */
-const API_BASE =
-  (import.meta as any)?.env?.VITE_API_BASE || "http://localhost:4000";
+const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || "http://localhost:4000";
 
 type Role = "admin" | "docente" | "estudiante";
 type RoleApi = "ADMIN" | "DOCENTE" | "ESTUDIANTE";
 
 /** ========= Tipos ========= */
 interface NewUser {
-  name: string;
-  lastname: string;
-  email: string;
-  username: string;
-  password: string;
-  role: Role;
+  name: string; lastname: string; email: string; username: string; password: string; role: Role;
 }
-
 interface UserRow {
-  id: string;
-  name: string;
-  lastname: string;
-  email: string;
-  username: string;
-  role: Role;
+  id: string; name: string; lastname: string; email: string; username: string; role: Role;
 }
 
 /** ========= Helpers API ========= */
 async function apiCreateUser(input: {
-  firstName: string;
-  lastName: string;
-  email: string;
-  username: string;
-  password: string;
-  role: RoleApi;
+  firstName: string; lastName: string; email: string; username: string; password: string; role: RoleApi;
 }) {
   const r = await fetch(`${API_BASE}/api/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data?.error ?? "No se pudo crear el usuario");
   return data;
 }
-
 async function apiListUsers(params: { q?: string; page?: number; pageSize?: number }) {
   const usp = new URLSearchParams();
   if (params.q) usp.set("q", params.q);
@@ -54,48 +35,20 @@ async function apiListUsers(params: { q?: string; page?: number; pageSize?: numb
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data?.error ?? "No se pudo listar usuarios");
   return data as {
-    items: Array<{
-      id: string;
-      firstName: string;
-      lastName: string;
-      email: string;
-      username: string;
-      role: RoleApi;
-      createdAt: string;
-      updatedAt: string;
-    }>;
-    total: number;
-    page: number;
-    pageSize: number;
+    items: Array<{ id: string; firstName: string; lastName: string; email: string; username: string; role: RoleApi; createdAt: string; updatedAt: string; }>;
+    total: number; page: number; pageSize: number;
   };
 }
-
 async function apiUpdateUser(input: {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  username: string;
-  role: RoleApi;
-  password?: string;
+  id: string; firstName: string; lastName: string; email: string; username: string; role: RoleApi; password?: string;
 }) {
   const r = await fetch(`${API_BASE}/api/users/${input.id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data?.error ?? "No se pudo actualizar");
-  return data as {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    username: string;
-    role: RoleApi;
-  };
+  return data as { id: string; firstName: string; lastName: string; email: string; username: string; role: RoleApi; };
 }
-
 async function apiDeleteUser(id: string) {
   const r = await fetch(`${API_BASE}/api/users/${id}`, { method: "DELETE" });
   const data = await r.json().catch(() => ({}));
@@ -105,252 +58,174 @@ async function apiDeleteUser(id: string) {
 
 /** ========= Componente ========= */
 export default function AdminCrearUsuario() {
-  // ---------- Estado ----------
   const [users, setUsers] = useState<UserRow[]>([]);
   const [total, setTotal] = useState(0);
-
-  const [open, setOpen] = useState(false); // despliegue form
+  const [open, setOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // form + edición
-  const emptyForm: NewUser = {
-    name: "",
-    lastname: "",
-    email: "",
-    username: "",
-    password: "",
-    role: "docente",
-  };
+  const emptyForm: NewUser = { name: "", lastname: "", email: "", username: "", password: "", role: "docente" };
   const [form, setForm] = useState<NewUser>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // filtros + paginación (del lado servidor)
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(8);
+  const [query, setQuery] = useState(""); const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(8);
 
-  // ---------- Carga desde backend ----------
+  /** ===== Validación ===== */
+  type FormErrors = Partial<Record<keyof NewUser, string>>;
+  const [errors, setErrors] = useState<FormErrors>({});
+
+  const nameRe = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]{2,}$/;
+  const usernameRe = /^[a-z0-9._]{3,24}$/;
+  const emailRe = /^[a-zA-Z0-9._%+-]+@unifranz\.edu\.bo$/i;         // <- dominio forzado
+  const passwordRe = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;               // 8+, 1 letra, 1 número
+
+  function validate(values: NewUser, isEdit: boolean): FormErrors {
+    const e: FormErrors = {};
+    if (!nameRe.test(values.name)) e.name = "Ingresa nombres válidos (sólo letras y espacios).";
+    if (!nameRe.test(values.lastname)) e.lastname = "Ingresa apellidos válidos.";
+    if (!emailRe.test(values.email)) e.email = "Usa tu correo @unifranz.edu.bo";
+    if (!usernameRe.test(values.username)) e.username = "Usuario 3–24 (minúsculas, números, punto o guion bajo).";
+    if (!isEdit && !passwordRe.test(values.password)) e.password = "Mínimo 8 caracteres, al menos una letra y un número.";
+    return e;
+  }
+
+  /** ===== Carga ===== */
   useEffect(() => {
     let on = true;
     (async () => {
-      setLoading(true);
-      setErr(null);
+      setLoading(true); setErr(null);
       try {
         const data = await apiListUsers({ q: query.trim(), page, pageSize });
         if (!on) return;
-        const rows: UserRow[] = data.items.map((u) => ({
-          id: u.id,
-          name: u.firstName,
-          lastname: u.lastName,
-          email: u.email,
-          username: u.username,
-          role: u.role.toLowerCase() as Role,
+        const rows = data.items.map(u => ({
+          id: u.id, name: u.firstName, lastname: u.lastName, email: u.email, username: u.username,
+          role: (u.role as string).toLowerCase() as Role,
         }));
-        setUsers(rows);
-        setTotal(data.total);
-      } catch (e: any) {
-        if (!on) return;
-        setErr(e.message || "Error al cargar usuarios");
-      } finally {
-        if (on) setLoading(false);
-      }
+        setUsers(rows); setTotal(data.total);
+      } catch (e: any) { if (on) setErr(e.message || "Error al cargar usuarios"); }
+      finally { if (on) setLoading(false); }
     })();
-    return () => {
-      on = false;
-    };
+    return () => { on = false; };
   }, [query, page, pageSize]);
 
-  // ---------- Handlers ----------
+  /** ===== Handlers ===== */
   const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    const { name, value } = e.target; setForm(prev => ({ ...prev, [name]: value })); setErrors(prev => ({ ...prev, [name]: undefined }));
   };
 
-  const startCreate = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setOpen(true);
-    setErr(null);
-    setMsg(null);
-  };
+  const startCreate = () => { setEditingId(null); setForm(emptyForm); setOpen(true); setErr(null); setMsg(null); setErrors({}); };
 
   const startEdit = (u: UserRow) => {
     setEditingId(u.id);
-    setForm({
-      name: u.name,
-      lastname: u.lastname,
-      email: u.email,
-      username: u.username,
-      password: "",
-      role: u.role,
-    });
-    setOpen(true);
-    setErr(null);
-    setMsg(null);
+    setForm({ name: u.name, lastname: u.lastname, email: u.email, username: u.username, password: "", role: u.role });
+    setOpen(true); setErr(null); setMsg(null); setErrors({});
   };
 
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr(null);
-    setMsg(null);
-
-    if (!form.name || !form.lastname || !form.email || !form.username || (!editingId && !form.password)) {
-      setErr("Completa todos los campos requeridos.");
-      return;
-    }
+    e.preventDefault(); setErr(null); setMsg(null);
+    const v = validate(form, !!editingId);
+    if (Object.keys(v).length) { setErrors(v); setErr("Revisa los campos marcados."); return; }
 
     setLoading(true);
     try {
       if (editingId) {
         const updated = await apiUpdateUser({
           id: editingId,
-          firstName: form.name,
-          lastName: form.lastname,
-          email: form.email,
-          username: form.username,
+          firstName: form.name, lastName: form.lastname, email: form.email, username: form.username,
           role: form.role.toUpperCase() as RoleApi,
-          // password: form.password || undefined, // si quieres permitir cambiar password en edición
         });
-
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === editingId
-              ? {
-                  id: updated.id,
-                  name: updated.firstName,
-                  lastname: updated.lastName,
-                  email: updated.email,
-                  username: updated.username,
-                  role: (updated.role as string).toLowerCase() as Role,
-                }
-              : u
-          )
-        );
+        setUsers(prev => prev.map(u => u.id === editingId
+          ? { id: updated.id, name: updated.firstName, lastname: updated.lastName, email: updated.email, username: updated.username, role: (updated.role as string).toLowerCase() as Role }
+          : u
+        ));
         setMsg("Usuario actualizado.");
       } else {
         const created = await apiCreateUser({
-          firstName: form.name,
-          lastName: form.lastname,
-          email: form.email,
-          username: form.username,
-          password: form.password,
+          firstName: form.name, lastName: form.lastname, email: form.email, username: form.username, password: form.password,
           role: form.role.toUpperCase() as RoleApi,
         });
-
-        const newRow: UserRow = {
-          id: created.id,
-          name: created.firstName,
-          lastname: created.lastName,
-          email: created.email,
-          username: created.username,
-          role: (created.role as string).toLowerCase() as Role,
-        };
-        setUsers((prev) => [newRow, ...prev]);
-        setTotal((t) => t + 1);
-        setMsg("Usuario creado con éxito.");
+        setUsers(prev => [{ id: created.id, name: created.firstName, lastname: created.lastName, email: created.email, username: created.username, role: (created.role as string).toLowerCase() as Role }, ...prev]);
+        setTotal(t => t + 1); setMsg("Usuario creado con éxito.");
       }
-
-      setForm(emptyForm);
-      setEditingId(null);
-      setPage(1);
-    } catch (e: any) {
-      setErr(e?.message || "Error inesperado");
-    } finally {
-      setLoading(false);
-    }
+      setForm(emptyForm); setEditingId(null); setPage(1);
+    } catch (e: any) { setErr(e?.message || "Error inesperado"); }
+    finally { setLoading(false); }
   };
 
   const removeUser = async (id: string) => {
-    const u = users.find((x) => x.id === id);
-    if (!u) return;
+    const u = users.find(x => x.id === id); if (!u) return;
     if (!confirm(`¿Eliminar al usuario "${u.name} ${u.lastname}" (@${u.username})?`)) return;
-
-    setLoading(true);
-    setErr(null);
-    setMsg(null);
-    try {
-      await apiDeleteUser(id);
-      setUsers((prev) => prev.filter((x) => x.id !== id));
-      setTotal((t) => Math.max(0, t - 1));
-      if (editingId === id) {
-        setEditingId(null);
-        setForm(emptyForm);
-      }
-      setMsg("Usuario eliminado.");
-    } catch (e: any) {
-      setErr(e?.message || "No se pudo eliminar");
-    } finally {
-      setLoading(false);
-    }
+    setLoading(true); setErr(null); setMsg(null);
+    try { await apiDeleteUser(id); setUsers(prev => prev.filter(x => x.id !== id)); setTotal(t => Math.max(0, t - 1)); if (editingId === id) { setEditingId(null); setForm(emptyForm); } setMsg("Usuario eliminado."); }
+    catch (e: any) { setErr(e?.message || "No se pudo eliminar"); }
+    finally { setLoading(false); }
   };
 
-  // ---------- Paginación (server) + filtro local visual ----------
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, pageCount);
 
-  // (solo para resaltar búsqueda en UI; los datos ya vienen del server filtrados)
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter((u) =>
-      [u.name, u.lastname, u.email, u.username].some((f) => f.toLowerCase().includes(q))
-    );
+    const q = query.trim().toLowerCase(); if (!q) return users;
+    return users.filter(u => [u.name, u.lastname, u.email, u.username].some(f => f.toLowerCase().includes(q)));
   }, [users, query]);
 
-  // ---------- UI ----------
+  /** ===== UI ===== */
   return (
-    <main className="page">
-      {/* Título + botón nuevo */}
+    <main className="cu-page">
       <header className="hdr">
         <div className="ttl-wrap">
           <h1 className="ttl">Usuarios</h1>
           <p className="sub">Gestiona y administra los usuarios del sistema.</p>
         </div>
-
         <button className="btn-cta" onClick={startCreate}>
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
-            <path d="M12 5v14m-7-7h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-          </svg>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M12 5v14m-7-7h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/></svg>
           <span>Nuevo usuario</span>
         </button>
       </header>
 
-      {/* Formulario colapsable */}
+      {/* Panel formulario */}
       <section className={`panel ${open ? "open" : ""}`} aria-hidden={!open}>
         <div className="panel__inner">
           <div className="panel__hdr">
             <h2 className="panel__ttl">{editingId ? "Editar usuario" : "Crear usuario"}</h2>
-            <button className="iconbtn" onClick={() => setOpen((s) => !s)} aria-label="Cerrar panel" title="Cerrar">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
+            <button className="iconbtn" onClick={() => setOpen(s => !s)} aria-label="Cerrar panel" title="Cerrar">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
             </button>
           </div>
 
-          <form className="form" onSubmit={submit}>
+          <form className="form" onSubmit={submit} noValidate>
             <div className="grid">
               <div className="col">
                 <label>Nombres</label>
-                <input name="name" value={form.name} onChange={onChange} placeholder="María" required />
+                <input name="name" value={form.name} onChange={onChange} placeholder="María"
+                  className={errors.name ? "invalid" : ""}/>
+                {errors.name && <small className="err-txt">{errors.name}</small>}
               </div>
               <div className="col">
                 <label>Apellidos</label>
-                <input name="lastname" value={form.lastname} onChange={onChange} placeholder="Pérez" required />
+                <input name="lastname" value={form.lastname} onChange={onChange} placeholder="Pérez"
+                  className={errors.lastname ? "invalid" : ""}/>
+                {errors.lastname && <small className="err-txt">{errors.lastname}</small>}
               </div>
               <div className="col">
                 <label>Email</label>
-                <input type="email" name="email" value={form.email} onChange={onChange} placeholder="maria@mail.com" required />
+                <input type="email" name="email" value={form.email} onChange={onChange} placeholder="usuario@unifranz.edu.bo"
+                  className={errors.email ? "invalid" : ""}/>
+                {errors.email && <small className="err-txt">{errors.email}</small>}
               </div>
               <div className="col">
                 <label>Usuario</label>
-                <input name="username" value={form.username} onChange={onChange} placeholder="maria.perez" required />
+                <input name="username" value={form.username} onChange={onChange} placeholder="maria.perez"
+                  className={errors.username ? "invalid" : ""}/>
+                {errors.username && <small className="err-txt">{errors.username}</small>}
               </div>
               {!editingId && (
                 <div className="col">
                   <label>Contraseña</label>
-                  <input type="password" name="password" value={form.password} onChange={onChange} placeholder="••••••••" required />
+                  <input type="password" name="password" value={form.password} onChange={onChange} placeholder="••••••••"
+                    className={errors.password ? "invalid" : ""}/>
+                  {errors.password && <small className="err-txt">{errors.password}</small>}
                 </div>
               )}
               <div className="col">
@@ -371,14 +246,7 @@ export default function AdminCrearUsuario() {
                 {loading ? "Guardando…" : editingId ? "Actualizar usuario" : "Crear usuario"}
               </button>
               {editingId && (
-                <button
-                  type="button"
-                  className="btn-soft"
-                  onClick={() => {
-                    setEditingId(null);
-                    setForm(emptyForm);
-                  }}
-                >
+                <button type="button" className="btn-soft" onClick={() => { setEditingId(null); setForm(emptyForm); setErrors({}); }}>
                   Cancelar edición
                 </button>
               )}
@@ -387,214 +255,185 @@ export default function AdminCrearUsuario() {
         </div>
       </section>
 
-      {/* Barra de controles de tabla (filtro arriba) */}
+      {/* Controles de tabla */}
       <section className="table-controls">
         <div className="search">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden>
-            <path d="M21 20l-5.6-5.6a7 7 0 10-1.4 1.4L20 21l1-1zM5 10a5 5 0 1110 0A5 5 0 015 10z" fill="currentColor" />
-          </svg>
-          <input
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Buscar por nombre, apellido, email o usuario…"
-          />
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M21 20l-5.6-5.6a7 7 0 10-1.4 1.4L20 21l1-1zM5 10a5 5 0 1110 0A5 5 0 015 10z" fill="currentColor"/></svg>
+          <input value={query} onChange={(e)=>{ setQuery(e.target.value); setPage(1); }} placeholder="Buscar por nombre, apellido, email o usuario…"/>
         </div>
-
         <div className="page-size">
           <span>Ver</span>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setPage(1);
-            }}
-          >
-            <option value={5}>5</option>
-            <option value={8}>8</option>
-            <option value={10}>10</option>
-            <option value={15}>15</option>
+          <select value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)); setPage(1); }}>
+            <option value={5}>5</option><option value={8}>8</option><option value={10}>10</option><option value={15}>15</option>
           </select>
           <span>por página</span>
         </div>
       </section>
 
       {/* Tabla */}
-      <div className="card table">
+      <div className="box data-table">
         <div className="thead">
-          <span>Nombre</span>
-          <span>Apellido</span>
-          <span>Email</span>
-          <span>Usuario</span>
-          <span>Rol</span>
+          <span>Nombre</span><span>Apellido</span><span>Email</span><span>Usuario</span><span>Rol</span>
           <span className="center">Acciones</span>
         </div>
 
         {filtered.map((u) => (
           <div className="tr" key={u.id}>
-            <span>{u.name}</span>
-            <span>{u.lastname}</span>
-            <span>{u.email}</span>
-            <span>@{u.username}</span>
+            <span>{u.name}</span><span>{u.lastname}</span><span>{u.email}</span><span>@{u.username}</span>
             <span className={`role ${u.role}`}>{u.role}</span>
             <span className="actions-cell">
               <button className="iconbtn edit" title="Editar" onClick={() => startEdit(u)}>
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" />
-                  <path d="M20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-                </svg>
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"/><path d="M20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
               </button>
               <button className="iconbtn del" title="Eliminar" onClick={() => removeUser(u.id)}>
-                <svg viewBox="0 0 24 24" width="18" height="18">
-                  <path d="M6 7h12l-1 14H7L6 7zm3-3h6l1 2H8l1-2z" />
-                </svg>
+                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 7h12l-1 14H7L6 7zm3-3h6l1 2H8l1-2z"/></svg>
               </button>
             </span>
           </div>
         ))}
-
         {filtered.length === 0 && <div className="empty">No hay resultados para “{query}”.</div>}
       </div>
 
       {/* Paginación */}
       <div className="pagination">
-        <button className="pg-btn" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-          « Anterior
-        </button>
-
+        <button className="pg-btn" disabled={currentPage<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>« Anterior</button>
         <div className="pg-pages">
-          {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
-            <button key={n} className={`pg-num ${n === currentPage ? "active" : ""}`} onClick={() => setPage(n)}>
-              {n}
-            </button>
+          {Array.from({ length: pageCount }, (_, i) => i + 1).map(n => (
+            <button key={n} className={`pg-num ${n===currentPage?"active":""}`} onClick={()=>setPage(n)}>{n}</button>
           ))}
         </div>
-
-        <button className="pg-btn" disabled={currentPage >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>
-          Siguiente »
-        </button>
+        <button className="pg-btn" disabled={currentPage>=pageCount} onClick={()=>setPage(p=>Math.min(pageCount,p+1))}>Siguiente »</button>
       </div>
 
-      {/* ====== ESTILOS ====== */}
-      <style>{`
-        :root{
-          --bg:#FFF8F5; --text:#1E1E1E; --sub:#6B6B6B;
-          --primary:#FF8A4C; --accent:#E36C2D;
-          --border:#F3D7C8; --soft:#FFE3D3; --white:#fff;
-          --ok:#12a150; --okbg:#e6faef; --okbr:#bfead1;
-          --err:#8a1f1f; --errbg:#ffe6e6; --errbr:#ffc7c7;
-          --card-shadow: 0 24px 60px rgba(0,0,0,.06);
-        }
-        .page{ padding:1rem; }
-
-        /* Título */
-        .hdr{ display:flex; align-items:end; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
-        .ttl-wrap{ display:flex; flex-direction:column; gap:.2rem; }
-        .ttl{ font-size:1.7rem; font-weight:900; line-height:1; }
-        .sub{ color:#8a8a8a; font-size:.95rem; }
-
-        .btn-cta{
-          display:inline-flex; align-items:center; gap:.5rem;
-          background:var(--primary); color:#fff; font-weight:900;
-          border:none; border-radius:.8rem; padding:.65rem 1rem; cursor:pointer;
-          box-shadow:0 10px 20px rgba(255,138,76,.25);
-        }
-        .btn-cta:hover{ background:var(--accent); }
-
-        /* Panel colapsable (form) */
-        .panel{
-          border:1px solid var(--border); background:#fff; border-radius:1rem;
-          overflow:hidden; max-height:0; transition:max-height .35s ease, box-shadow .2s; box-shadow:0 0 0 rgba(0,0,0,0);
-          margin-bottom:1rem;
-        }
-        .panel.open{ max-height:860px; box-shadow:var(--card-shadow); }
-        .panel__inner{ padding:1rem; }
-        .panel__hdr{ display:flex; align-items:center; justify-content:space-between; }
-        .panel__ttl{ font-weight:800; margin:0 0 .75rem; }
-        .iconbtn{ border:1px solid var(--border); background:#fff; border-radius:.6rem; padding:.4rem; cursor:pointer; color:#6b6b6b; }
-        .iconbtn:hover{ background:#fff5ef; }
-
-        /* Formulario */
-        .form{ display:block; }
-        .grid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:1rem; }
-        @media(max-width:900px){ .grid{ grid-template-columns: 1fr; } }
-        label{ font-size:.9rem; font-weight:700; display:block; margin-bottom:.25rem; }
-        input, select{
-          width:100%; padding:.9rem 1rem; border-radius:.9rem;
-          border:1px solid #eadcd4; outline:none; background:#fff;
-        }
-        input:focus, select:focus{ border-color:var(--primary); box-shadow:0 0 0 3px rgba(255,138,76,.22); }
-        .actions{ margin-top:1rem; display:flex; gap:.6rem; }
-        .btn-primary{
-          background:var(--primary); color:#fff; font-weight:900; border:none;
-          padding:.9rem 1.1rem; border-radius:.9rem; cursor:pointer;
-          box-shadow:0 10px 20px rgba(255,138,76,.22);
-        }
-        .btn-primary:hover{ background:var(--accent); }
-        .btn-soft{ background:#fff; color:#573b2d; border:1px solid var(--border); padding:.9rem 1.1rem; border-radius:.9rem; cursor:pointer; }
-        .btn-soft:hover{ background:#fff6ef; }
-
-        .alert{ margin-top:.6rem; padding:.65rem .9rem; border-radius:.7rem; }
-        .ok{ color:var(--ok); background:var(--okbg); border:1px solid var(--okbr); }
-        .err{ color:var(--err); background:var(--errbg); border:1px solid var(--errbr); }
-
-        /* Controles de tabla (buscar + page-size) */
-        .table-controls{
-          display:flex; align-items:center; justify-content:space-between; gap:.75rem;
-          margin: .2rem 0 .6rem;
-        }
-        .search{
-          flex:1; display:flex; align-items:center; gap:.6rem;
-          background:#fff; border:1px solid var(--border); border-radius:.9rem;
-          padding:.55rem .8rem; box-shadow: var(--card-shadow);
-        }
-        .search input{ border:none; outline:none; width:100%; min-width:180px; }
-        .page-size{ display:flex; align-items:center; gap:.45rem; color:#5b5b5b; }
-        .page-size select{ padding:.45rem .6rem; border-radius:.6rem; border:1px solid var(--border); background:#fff; }
-
-        /* Tarjeta tabla */
-        .card{
-          background:#fff; border:1px solid var(--border); border-radius:1rem;
-          box-shadow:var(--card-shadow); overflow:hidden;
-        }
-        .thead, .tr{
-          display:grid; grid-template-columns: 1.2fr 1.2fr 1.8fr 1.2fr .9fr 1fr;
-          gap:.5rem; padding:.85rem 1rem; align-items:center;
-        }
-        .thead{ background:#FFF2EA; font-weight:800; }
-        .tr{ border-top:1px solid #f5e5dc; }
-        .center{ text-align:center; }
-        .empty{ padding:1rem; text-align:center; color:#7a7a7a; }
-
-        .actions-cell{ display:flex; gap:.4rem; justify-content:center; }
-        .iconbtn.edit{ color:#1b4a7a; border-color:#cfe3f7; }
-        .iconbtn.edit:hover{ background:#eef6ff; }
-        .iconbtn.del{ color:#a12828; border-color:#f3c8c8; }
-        .iconbtn.del:hover{ background:#ffecec; }
-
-        .role{
-          text-transform:capitalize; font-weight:800; padding:.28rem .65rem; border-radius:999px; display:inline-block; text-align:center;
-        }
-        .role.admin{ background:#FFE3D3; color:#8a4d2b; }
-        .role.docente{ background:#eaf5ff; color:#1b4a7a; }
-        .role.estudiante{ background:#eaf9f0; color:#1d6b3d; }
-
-        /* Paginación */
-        .pagination{ display:flex; align-items:center; justify-content:center; gap:.6rem; margin: .9rem 0; }
-        .pg-btn{
-          padding:.55rem .9rem; border:1px solid var(--border); background:#fff;
-          border-radius:.7rem; cursor:pointer; box-shadow:0 6px 14px rgba(0,0,0,.05);
-        }
-        .pg-btn:disabled{ opacity:.5; cursor:not-allowed; }
-        .pg-pages{ display:flex; gap:.4rem; }
-        .pg-num{
-          min-width:36px; height:36px; border-radius:.7rem; border:1px solid var(--border);
-          background:#fff; cursor:pointer; box-shadow:0 6px 14px rgba(0,0,0,.05);
-        }
-        .pg-num.active{ background:var(--primary); color:#fff; border-color:transparent; }
-      `}</style>
+      <style>{styles}</style>
     </main>
   );
 }
+
+const styles = `
+:root{
+  --bg:#FFFFFF; 
+  --text:#1E1E1E; 
+  --sub:#6B6B6B;
+
+  --primary:#FF8A4C; 
+  --accent:#E36C2D;
+  --white:#fff;
+
+  /* SOMBRAS */
+  --shadow-sm: 0 4px 12px rgba(0,0,0,.06);
+  --shadow-md: 0 12px 28px rgba(0,0,0,.08), 0 2px 6px rgba(0,0,0,.04);
+  --shadow-lg: 0 24px 60px rgba(0,0,0,.10);
+
+  --ok:#12a150; 
+  --okbg:#e6faef; 
+  --okbr:#bfead1; 
+  --err:#8a1f1f; 
+  --errbg:#ffe6e6; 
+  --errbr:#ffc7c7;
+}
+.cu-page {
+  padding-top: 3rem; /* más espacio arriba */
+  padding-right: 1.5rem;
+  padding-left: 1.5rem;
+  padding-bottom: 1.5rem;
+
+  background: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+
+/* Header */
+.hdr{ display:flex; align-items:end; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
+.ttl-wrap{ display:flex; flex-direction:column; gap:.2rem; }
+.ttl{ font-size:1.7rem; font-weight:900; line-height:1; }
+.sub{ color:#8a8a8a; font-size:.95rem; }
+.btn-cta{ display:inline-flex; align-items:center; gap:.5rem; background:var(--primary); color:#fff; font-weight:900; border:none; border-radius:.8rem; padding:.65rem 1rem; cursor:pointer; box-shadow:0 10px 20px rgba(255,138,76,.25); }
+.btn-cta:hover{ background:var(--accent); }
+
+/* Panel formulario (sombras en los bordes) */
+.panel{
+  border:1px solid transparent; 
+  background:#fff; 
+  border-radius:1rem; 
+  overflow:hidden; 
+  max-height:0; 
+  transition:max-height .35s ease, box-shadow .2s;
+  box-shadow: var(--shadow-sm); /* sombra suave por defecto */
+  margin-bottom:1rem; 
+}
+.panel.open{ 
+  max-height:900px; 
+  box-shadow: var(--shadow-md); /* un poco más marcada al abrir */
+}
+.panel__inner{ padding:1rem; }
+.panel__hdr{ display:flex; align-items:center; justify-content:space-between; }
+.panel__ttl{ font-weight:800; margin:0 0 .75rem; }
+.iconbtn{ border:1px solid transparent; background:#fff; border-radius:.6rem; padding:.4rem; cursor:pointer; color:#6b6b6b; box-shadow:var(--shadow-sm); }
+.iconbtn:hover{ box-shadow:var(--shadow-md); }
+
+/* Form */
+.form{ display:block; }
+.grid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:1rem; }
+@media(max-width:900px){ .grid{ grid-template-columns: 1fr; } }
+label{ font-size:.9rem; font-weight:700; display:block; margin-bottom:.25rem; }
+input, select{
+  width:100%; padding:.9rem 1rem; border-radius:.9rem; border:1px solid #eadcd4; outline:none; background:#fff;
+  box-shadow:var(--shadow-sm); /* sombra leve en inputs */
+}
+input:focus, select:focus{ border-color:var(--primary); box-shadow:var(--shadow-md); }
+.invalid{ border-color:#ff6565 !important; box-shadow:var(--shadow-sm), 0 0 0 3px rgba(255,101,101,.18) !important; }
+.err-txt{ color:#b02020; font-size:.8rem; margin-top:.25rem; display:block; }
+.actions{ margin-top:1rem; display:flex; gap:.6rem; }
+.btn-primary{ background:var(--primary); color:#fff; font-weight:900; border:none; padding:.9rem 1.1rem; border-radius:.9rem; cursor:pointer; box-shadow:0 10px 20px rgba(255,138,76,.22); }
+.btn-primary:hover{ background:var(--accent); }
+.btn-soft{ background:#fff; color:#573b2d; border:1px solid #eadcd4; padding:.9rem 1.1rem; border-radius:.9rem; cursor:pointer; box-shadow:var(--shadow-sm); }
+.btn-soft:hover{ box-shadow:var(--shadow-md); }
+.alert{ margin-top:.6rem; padding:.65rem .9rem; border-radius:.7rem; box-shadow:var(--shadow-sm); }
+.ok{ color:var(--ok); background:var(--okbg); border:1px solid var(--okbr); }
+.err{ color:var(--err); background:var(--errbg); border:1px solid var(--errbr); }
+
+/* Tabla (sombras en la tarjeta) */
+.box{ 
+  background:#fff; 
+  border:1px solid transparent; 
+  border-radius:1rem; 
+  box-shadow:var(--shadow-md); 
+  overflow:hidden; 
+}
+.data-table .thead, .data-table .tr{ display:grid; grid-template-columns: 1.2fr 1.2fr 1.8fr 1.2fr .9fr 1fr; gap:.5rem; padding:.85rem 1rem; align-items:center; }
+.data-table .thead{ background:#FFF2EA; font-weight:800; }
+.data-table .tr{ border-top:1px solid #f5e5dc; }
+.center{ text-align:center; }
+.empty{ padding:1rem; text-align:center; color:#7a7a7a; }
+.actions-cell{ display:flex; gap:.4rem; justify-content:center; }
+.iconbtn.edit{ color:#1b4a7a; border-color:#cfe3f7; }
+.iconbtn.edit:hover{ background:#eef6ff; }
+.iconbtn.del{ color:#a12828; border-color:#f3c8c8; }
+.iconbtn.del:hover{ background:#ffecec; }
+.role{ text-transform:capitalize; font-weight:800; padding:.28rem .65rem; border-radius:999px; display:inline-block; text-align:center; }
+.role.admin{ background:#FFE3D3; color:#8a4d2b; }
+.role.docente{ background:#eaf5ff; color:#1b4a7a; }
+.role.estudiante{ background:#eaf9f0; color:#1d6b3d; }
+
+/* Controles de tabla + paginación */
+.table-controls{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin:.2rem 0 .6rem; }
+.search{ 
+  flex:1; display:flex; align-items:center; gap:.6rem; 
+  background:#fff; border:1px solid transparent; border-radius:.9rem; padding:.55rem .8rem; 
+  box-shadow: var(--shadow-md); 
+}
+.search input{ border:none; outline:none; width:100%; min-width:180px; }
+.page-size{ display:flex; align-items:center; gap:.45rem; color:#5b5b5b; }
+.page-size select{ padding:.45rem .6rem; border-radius:.6rem; border:1px solid #eadcd4; background:#fff; box-shadow:var(--shadow-sm); }
+
+.pagination{ display:flex; align-items:center; justify-content:center; gap:.6rem; margin:.9rem 0; }
+.pg-btn{ padding:.55rem .9rem; border:1px solid #eadcd4; background:#fff; border-radius:.7rem; cursor:pointer; box-shadow:var(--shadow-sm); }
+.pg-btn:hover{ box-shadow:var(--shadow-md); }
+.pg-btn:disabled{ opacity:.5; cursor:not-allowed; }
+.pg-pages{ display:flex; gap:.4rem; }
+.pg-num{ min-width:36px; height:36px; border-radius:.7rem; border:1px solid #eadcd4; background:#fff; cursor:pointer; box-shadow:var(--shadow-sm); }
+.pg-num:hover{ box-shadow:var(--shadow-md); }
+.pg-num.active{ background:var(--primary); color:#fff; border-color:transparent; }
+`;
