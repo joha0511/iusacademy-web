@@ -33,6 +33,8 @@ import EstudianteTareas from "./pages/estudiante/EstudianteTareas";
 import EstudianteSimulacion from "./pages/estudiante/EstudianteSimulacion";
 import EstudianteCalendario from "./pages/estudiante/EstudianteCalendario";
 import EstudiantePerfil from "./pages/estudiante/EstudiantePerfil";
+import EstudianteRevisor from "./pages/estudiante/EstudianRevisor";
+import EstudianteQuizIA from "./pages/estudiante/EstudianteQuizz";
 
 export default function App() {
   return (
@@ -63,6 +65,8 @@ export default function App() {
           <Route path="simulacion" element={<EstudianteSimulacion />} />
           <Route path="calendario" element={<EstudianteCalendario />} />
           <Route path="perfil" element={<EstudiantePerfil />} />
+          <Route path="ia/revisor" element={<EstudianteRevisor />} />
+          <Route path="ia/quiz" element={<EstudianteQuizIA />} />
         </Route>
 
         {/* 404 */}

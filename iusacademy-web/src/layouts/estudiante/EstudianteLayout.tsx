@@ -1,8 +1,9 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   Home, ListTodo, PlayCircle, Calendar,
-  User as UserIcon, Users, Bell, StickyNote, FolderKanban,
-  LogOut, UserRound, ChevronLeft, ChevronRight
+  User as UserIcon, Users, Bell, FolderKanban,
+  LogOut, UserRound, ChevronLeft, ChevronRight,
+  Bot, FileText, Gavel, ListChecks, ChevronDown
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -19,6 +20,7 @@ type MenuItem = {
 
 export default function EstudianteLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [iaOpen, setIaOpen] = useState(true);            // ⟵ estado del submenú IA
   const [user, setUser] = useState<{ firstName: string; lastName: string } | null>(null);
   const navigate = useNavigate();
 
@@ -33,6 +35,9 @@ export default function EstudianteLayout() {
     })();
   }, [navigate]);
 
+  // Si colapsa el aside, cerramos el submenú IA
+  useEffect(() => { if (collapsed) setIaOpen(false); }, [collapsed]);
+
   const greeting = useMemo(() => {
     const h = new Date().getHours();
     return h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches";
@@ -40,14 +45,12 @@ export default function EstudianteLayout() {
 
   const menu: MenuItem[] = [
     { to: "/estudiante", label: "Inicio", icon: Home, end: true },
-    // 👇 SIN badge
     { to: "/estudiante/tareas", label: "Tareas", icon: ListTodo },
     { to: "/estudiante/simulacion", label: "Simulación", icon: PlayCircle },
     { to: "/estudiante/calendario", label: "Calendario", icon: Calendar },
-    { to: "/estudiante/perfil", label: "Perfil", icon: UserIcon },
+    { to: "/estudiante/perfil", label: "Perfil", icon: UserIcon }, // Perfil queda después de IA
     { to: "/estudiante/colaboraciones", label: "Colaboraciones", icon: Users, disabled: true },
     { to: "/estudiante/notificaciones", label: "Notificaciones", icon: Bell, disabled: true },
-    { to: "/estudiante/pizarra", label: "Pizarra", icon: StickyNote, disabled: true },
     { to: "/estudiante/proyectos", label: "Proyectos", icon: FolderKanban, disabled: true },
   ];
 
@@ -60,11 +63,9 @@ export default function EstudianteLayout() {
 
           {!collapsed && (
             <div className="hello">
-              {/* ✨ al lado del saludo */}
               <span className="hi">
                 {greeting} <span aria-hidden="true" className="sparkle">✨</span>
               </span>
-              {/* Nombre y apellido juntos, sin wrap */}
               <strong className="who">{user?.firstName} {user?.lastName}</strong>
             </div>
           )}
@@ -77,25 +78,47 @@ export default function EstudianteLayout() {
         <div className="section-title">MENÚ</div>
 
         <nav className="nav">
-          {menu.map(({ to, label, icon: Icon, end, disabled, badge }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `item ${isActive ? "active" : ""} ${disabled ? "disabled" : ""}`
-              }
-              onClick={e => disabled && e.preventDefault()}
-              title={collapsed ? label : undefined}
-            >
-              <Icon className="ic" size={18} />
-              {!collapsed && <span className="txt">{label}</span>}
-              {/* La pill solo aparece si hay número definido y > 0 */}
-              {!collapsed && typeof badge === "number" && badge > 0 && (
-                <span className="pill">{badge}</span>
-              )}
-            </NavLink>
-          ))}
+          {/* Items antes de IA */}
+          <NavList items={menu.slice(0, 4)} collapsed={collapsed} />
+
+          {/* ===== Grupo IA (colapsable) ===== */}
+          <button
+            className={`item ia-head ${iaOpen ? "open" : ""}`}
+            onClick={() => !collapsed && setIaOpen(o => !o)}
+            title={collapsed ? "IA" : undefined}
+          >
+            <Bot className="ic" size={18} />
+            {!collapsed && <span className="txt">IA</span>}
+            {!collapsed && <ChevronDown className={`chev ${iaOpen ? "rot" : ""}`} size={16} />}
+          </button>
+
+          {!collapsed && iaOpen && (
+            <div className="submenu">
+              <NavLink
+                to="/estudiante/ia/revisor"
+                className={({ isActive }) => `sub-item ${isActive ? "active" : ""}`}
+              >
+                <FileText size={16} className="sub-ic" />
+                <span>Revisor de memoriales</span>
+              </NavLink>
+
+              <div className="sub-item disabled" title="Próximamente">
+                <Gavel size={16} className="sub-ic" />
+                <span>Tutor de audiencias</span>
+              </div>
+
+              <NavLink
+                to="/estudiante/ia/quiz"
+                className={({ isActive }) => `sub-item ${isActive ? "active" : ""}`}
+              >
+                <ListChecks size={16} className="sub-ic" />
+                <span>Generador de quizzes</span>
+              </NavLink>
+            </div>
+          )}
+
+          {/* Resto del menú (Perfil va después de IA) */}
+          <NavList items={menu.slice(4)} collapsed={collapsed} />
         </nav>
 
         <button className="logout"
@@ -113,6 +136,32 @@ export default function EstudianteLayout() {
 
       <style>{layoutStyles}</style>
     </div>
+  );
+}
+
+/** Render simple de lista de NavLink con los estilos existentes */
+function NavList({ items, collapsed }: { items: MenuItem[]; collapsed: boolean }) {
+  return (
+    <>
+      {items.map(({ to, label, icon: Icon, end, disabled, badge }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={end}
+          className={({ isActive }) =>
+            `item ${isActive ? "active" : ""} ${disabled ? "disabled" : ""}`
+          }
+          onClick={e => disabled && e.preventDefault()}
+          title={collapsed ? label : undefined}
+        >
+          <Icon className="ic" size={18} />
+          {!collapsed && <span className="txt">{label}</span>}
+          {!collapsed && typeof badge === "number" && badge > 0 && (
+            <span className="pill">{badge}</span>
+          )}
+        </NavLink>
+      ))}
+    </>
   );
 }
 
@@ -162,7 +211,7 @@ const layoutStyles = `
 .hello{ line-height:1.05; min-width:0; }
 .hi{ color:var(--sub); font-size:.82rem; display:inline-flex; align-items:center; gap:6px; }
 .sparkle{ display:inline-block; transform:translateY(-1px); }
-.who{ color:var(--text); font-weight:800; white-space:nowrap; }  /* <- evita salto entre nombre y apellido */
+.who{ color:var(--text); font-weight:800; white-space:nowrap; }
 
 .toggle{ border:none; background:none; cursor:pointer; color:var(--primary); }
 
@@ -173,6 +222,7 @@ const layoutStyles = `
 
 .nav{ display:flex;flex-direction:column;gap:2px;flex:1; }
 
+/* ===== Items generales ===== */
 .item{
   display:flex;align-items:center;gap:10px;
   padding:8px;border-radius:14px;
@@ -184,7 +234,6 @@ const layoutStyles = `
 
 .ic{ flex-shrink:0; }
 .txt{ white-space:nowrap; }
-
 .page.is-collapsed .txt{ display:none; }
 
 .pill{
@@ -195,10 +244,40 @@ const layoutStyles = `
 }
 .page.is-collapsed .pill{ display:none; }
 
+/* ===== IA ===== */
+.ia-head{
+  position:relative;
+  display:flex; align-items:center; gap:10px;
+  padding:8px; border-radius:14px; font-weight:700;
+  background:none; border:none; text-align:left; cursor:pointer;
+  color:#3f3f3f;
+}
+.ia-head:hover { color:var(--primary); }
+.ia-head .chev { margin-left:auto; transition:transform .18s ease; }
+.ia-head .chev.rot { transform:rotate(180deg); }
+
+/* submenú — un poco más hacia la izquierda */
+.submenu{
+  margin-left:6px;                 /* 👈 menos margen que antes */
+  padding-left:10px;               /* 👈 sangría corta */
+  border-left:1px solid #eaeaea;
+  display:flex; flex-direction:column; gap:2px;
+}
+
+.sub-item{
+  display:flex; align-items:center; gap:8px;
+  padding:6px 6px; border-radius:12px;
+  font-size:.92rem; color:#4d4d4d; text-decoration:none;
+}
+.sub-item:hover{ background:#f7f7f7; }
+.sub-item.active{ background:#f2f2f2; color:var(--accent); }
+.sub-item.disabled{ opacity:.55; cursor:not-allowed; }
+.sub-ic{ flex-shrink:0; }
+
 .logout{
   margin-top:auto; display:flex;align-items:center;gap:10px;
   padding:8px;border-radius:14px;font-weight:700;
-  color:var(--accent); background:none; border:none; cursor:pointer;
+  color:#E36C2D; background:none; border:none; cursor:pointer;
 }
-.logout:hover{ color:var(--primary); }
+.logout:hover{ color:#FF8A4C; }
 `;
