@@ -1,9 +1,24 @@
+// src/layouts/EstudianteLayout.tsx
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
-  Home, ListTodo, PlayCircle, Calendar,
-  User as UserIcon, Users, Bell, FolderKanban,
-  LogOut, UserRound, ChevronLeft, ChevronRight,
-  Bot, FileText, Gavel, ListChecks, ChevronDown
+  Home,
+  ListTodo,
+  PlayCircle,
+  Calendar,
+  User as UserIcon,
+  Users,
+  Bell,
+  LogOut,
+  UserRound,
+  ChevronLeft,
+  ChevronRight,
+  Bot,
+  FileText,
+  Gavel,
+  ListChecks,
+  ChevronDown,
+  ShieldCheck,
+  ScrollText, // ⬅️ NUEVO icono para Contratos
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -20,7 +35,7 @@ type MenuItem = {
 
 export default function EstudianteLayout() {
   const [collapsed, setCollapsed] = useState(false);
-  const [iaOpen, setIaOpen] = useState(true);            // ⟵ estado del submenú IA
+  const [iaOpen, setIaOpen] = useState(true);
   const [user, setUser] = useState<{ firstName: string; lastName: string } | null>(null);
   const navigate = useNavigate();
 
@@ -35,8 +50,9 @@ export default function EstudianteLayout() {
     })();
   }, [navigate]);
 
-  // Si colapsa el aside, cerramos el submenú IA
-  useEffect(() => { if (collapsed) setIaOpen(false); }, [collapsed]);
+  useEffect(() => {
+    if (collapsed) setIaOpen(false);
+  }, [collapsed]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -48,10 +64,9 @@ export default function EstudianteLayout() {
     { to: "/estudiante/tareas", label: "Tareas", icon: ListTodo },
     { to: "/estudiante/simulacion", label: "Simulación", icon: PlayCircle },
     { to: "/estudiante/calendario", label: "Calendario", icon: Calendar },
-    { to: "/estudiante/perfil", label: "Perfil", icon: UserIcon }, // Perfil queda después de IA
+    { to: "/estudiante/perfil", label: "Perfil", icon: UserIcon },
     { to: "/estudiante/colaboraciones", label: "Colaboraciones", icon: Users, disabled: true },
     { to: "/estudiante/notificaciones", label: "Notificaciones", icon: Bell, disabled: true },
-    { to: "/estudiante/proyectos", label: "Proyectos", icon: FolderKanban, disabled: true },
   ];
 
   return (
@@ -59,18 +74,25 @@ export default function EstudianteLayout() {
       <aside className="card">
         {/* Header */}
         <div className="header">
-          <div className="avatar"><UserRound size={22} /></div>
+          <div className="avatar">
+            <UserRound size={22} />
+          </div>
 
           {!collapsed && (
             <div className="hello">
               <span className="hi">
-                {greeting} <span aria-hidden="true" className="sparkle">✨</span>
+                {greeting}{" "}
+                <span aria-hidden="true" className="sparkle">
+                  ✨
+                </span>
               </span>
-              <strong className="who">{user?.firstName} {user?.lastName}</strong>
+              <strong className="who">
+                {user?.firstName} {user?.lastName}
+              </strong>
             </div>
           )}
 
-          <button className="toggle" onClick={() => setCollapsed(s => !s)}>
+          <button className="toggle" onClick={() => setCollapsed((s) => !s)}>
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
         </div>
@@ -84,16 +106,28 @@ export default function EstudianteLayout() {
           {/* ===== Grupo IA (colapsable) ===== */}
           <button
             className={`item ia-head ${iaOpen ? "open" : ""}`}
-            onClick={() => !collapsed && setIaOpen(o => !o)}
+            onClick={() => !collapsed && setIaOpen((o) => !o)}
             title={collapsed ? "IA" : undefined}
           >
             <Bot className="ic" size={18} />
             {!collapsed && <span className="txt">IA</span>}
-            {!collapsed && <ChevronDown className={`chev ${iaOpen ? "rot" : ""}`} size={16} />}
+            {!collapsed && (
+              <ChevronDown className={`chev ${iaOpen ? "rot" : ""}`} size={16} />
+            )}
           </button>
 
           {!collapsed && iaOpen && (
             <div className="submenu">
+              {/* Asistente virtual */}
+              <NavLink
+                to="/estudiante/ia/asistente"
+                className={({ isActive }) => `sub-item ${isActive ? "active" : ""}`}
+              >
+                <Bot size={16} className="sub-ic" />
+                <span>Asistente virtual</span>
+              </NavLink>
+
+              {/* Revisor de memoriales */}
               <NavLink
                 to="/estudiante/ia/revisor"
                 className={({ isActive }) => `sub-item ${isActive ? "active" : ""}`}
@@ -102,17 +136,40 @@ export default function EstudianteLayout() {
                 <span>Revisor de memoriales</span>
               </NavLink>
 
-              <div className="sub-item disabled" title="Próximamente">
+              {/* 🆕 Contratos 📜 */}
+              <NavLink
+                to="/estudiante/ia/contratos"
+                className={({ isActive }) => `sub-item ${isActive ? "active" : ""}`}
+              >
+                <ScrollText size={16} className="sub-ic" />
+                <span>Contratos</span>
+              </NavLink>
+
+              {/* Tutor de audiencias */}
+              <NavLink
+                to="/estudiante/ia/tutorias"
+                className={({ isActive }) => `sub-item ${isActive ? "active" : ""}`}
+              >
                 <Gavel size={16} className="sub-ic" />
                 <span>Tutor de audiencias</span>
-              </div>
+              </NavLink>
 
+              {/* Generador de quizzes */}
               <NavLink
                 to="/estudiante/ia/quiz"
                 className={({ isActive }) => `sub-item ${isActive ? "active" : ""}`}
               >
                 <ListChecks size={16} className="sub-ic" />
                 <span>Generador de quizzes</span>
+              </NavLink>
+
+              {/* Detector de IA */}
+              <NavLink
+                to="/estudiante/ia/detector"
+                className={({ isActive }) => `sub-item ${isActive ? "active" : ""}`}
+              >
+                <ShieldCheck size={16} className="sub-ic" />
+                <span>Detector de IA</span>
               </NavLink>
             </div>
           )}
@@ -121,8 +178,12 @@ export default function EstudianteLayout() {
           <NavList items={menu.slice(4)} collapsed={collapsed} />
         </nav>
 
-        <button className="logout"
-          onClick={async () => { await logoutApi(); navigate("/login"); }}
+        <button
+          className="logout"
+          onClick={async () => {
+            await logoutApi();
+            navigate("/login");
+          }}
           title={collapsed ? "Salir" : undefined}
         >
           <LogOut className="ic" size={18} />
@@ -139,7 +200,6 @@ export default function EstudianteLayout() {
   );
 }
 
-/** Render simple de lista de NavLink con los estilos existentes */
 function NavList({ items, collapsed }: { items: MenuItem[]; collapsed: boolean }) {
   return (
     <>
@@ -151,7 +211,7 @@ function NavList({ items, collapsed }: { items: MenuItem[]; collapsed: boolean }
           className={({ isActive }) =>
             `item ${isActive ? "active" : ""} ${disabled ? "disabled" : ""}`
           }
-          onClick={e => disabled && e.preventDefault()}
+          onClick={(e) => disabled && e.preventDefault()}
           title={collapsed ? label : undefined}
         >
           <Icon className="ic" size={18} />
@@ -222,7 +282,6 @@ const layoutStyles = `
 
 .nav{ display:flex;flex-direction:column;gap:2px;flex:1; }
 
-/* ===== Items generales ===== */
 .item{
   display:flex;align-items:center;gap:10px;
   padding:8px;border-radius:14px;
@@ -244,7 +303,6 @@ const layoutStyles = `
 }
 .page.is-collapsed .pill{ display:none; }
 
-/* ===== IA ===== */
 .ia-head{
   position:relative;
   display:flex; align-items:center; gap:10px;
@@ -256,10 +314,9 @@ const layoutStyles = `
 .ia-head .chev { margin-left:auto; transition:transform .18s ease; }
 .ia-head .chev.rot { transform:rotate(180deg); }
 
-/* submenú — un poco más hacia la izquierda */
 .submenu{
-  margin-left:6px;                 /* 👈 menos margen que antes */
-  padding-left:10px;               /* 👈 sangría corta */
+  margin-left:6px;
+  padding-left:10px;
   border-left:1px solid #eaeaea;
   display:flex; flex-direction:column; gap:2px;
 }
@@ -281,3 +338,4 @@ const layoutStyles = `
 }
 .logout:hover{ color:#FF8A4C; }
 `;
+

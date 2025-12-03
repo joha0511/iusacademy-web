@@ -35,6 +35,10 @@ import EstudianteCalendario from "./pages/estudiante/EstudianteCalendario";
 import EstudiantePerfil from "./pages/estudiante/EstudiantePerfil";
 import EstudianteRevisor from "./pages/estudiante/EstudianRevisor";
 import EstudianteQuizIA from "./pages/estudiante/EstudianteQuizz";
+import EstudianteAsistente from "./pages/estudiante/EstudianteAsistente";
+import EstudianteDetectorIA from "./pages/estudiante/EstudianteDetectorIA";
+import EstudianteTutor from "./pages/estudiante/EstudianteTutor";
+import EstudianteContratos from "./pages/estudiante/EstudianteContratos";
 
 export default function App() {
   return (
@@ -67,6 +71,11 @@ export default function App() {
           <Route path="perfil" element={<EstudiantePerfil />} />
           <Route path="ia/revisor" element={<EstudianteRevisor />} />
           <Route path="ia/quiz" element={<EstudianteQuizIA />} />
+          <Route path="ia/asistente" element={<EstudianteAsistente />} />
+          <Route path="ia/detector" element={<EstudianteDetectorIA />} />
+          <Route path="ia/tutorias" element={<EstudianteTutor />} />
+          <Route path="ia/contratos" element={<EstudianteContratos />} />
+          
         </Route>
 
         {/* 404 */}
