@@ -9,7 +9,7 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "lib": ["ES2020"],
-    "types": ["node", "jest"],
+    "types": ["node"],
 
     /* ==== Type safety ==== */
     "strict": true,
@@ -30,11 +30,7 @@
     "isolatedModules": true
   },
   "include": [
-    "src/**/*.ts",
-    "tests/**/*.ts",
-    "__tests__/**/*.ts",
-    "jest.config.ts",
-    "jest.setup.ts"
+    "src/**/*.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }

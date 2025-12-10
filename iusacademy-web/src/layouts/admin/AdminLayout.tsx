@@ -16,20 +16,39 @@ export default function AdminLayout() {
   const [lastName, setLastName] = useState("");
   const navigate = useNavigate();
 
-  useEffect(() => { (async () => {
-    const me = await meApi(); 
-    if (!me) return navigate("/login", { replace: true });
-    setFirstName(me.firstName || ""); 
-    setLastName(me.lastName || "");
-  })(); }, [navigate]);
+  useEffect(() => {
+    (async () => {
+      const me = await meApi();
 
-  // Saludo
+      
+      if (!me) {
+        return navigate("/login", { replace: true });
+      }
+
+      if (me.role !== "ADMIN") {
+        if (me.role === "ESTUDIANTE") {
+          return navigate("/estudiante", { replace: true });
+        }
+        if (me.role === "DOCENTE") {
+          return navigate("/docente", { replace: true });
+        }
+        
+        return navigate("/", { replace: true });
+      }
+
+      
+      setFirstName(me.firstName || "");
+      setLastName(me.lastName || "");
+    })();
+  }, [navigate]);
+
+  
   const greeting = useMemo(() => {
     const h = new Date().getHours();
     return h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches";
   }, []);
 
-  // 👉 Solo primer nombre y primer apellido
+  
   const firstToken = (firstName || "").trim().split(/\s+/)[0] ?? "";
   const lastToken  = (lastName  || "").trim().split(/\s+/)[0] ?? "";
   const displayName = (firstToken || lastToken) ? `${firstToken} ${lastToken}`.trim() : "Administrador";
@@ -48,11 +67,16 @@ export default function AdminLayout() {
         <div className="header">
           <div className="avatar"><UserRound size={22} /></div>
           <div className="hello">
-            {/* ✨ solo estrellitas al lado del saludo */}
-            <span className="hi">{greeting} <span aria-hidden className="sparkle">✨</span></span>
+            <span className="hi">
+              {greeting} <span aria-hidden className="sparkle">✨</span>
+            </span>
             <strong className="who">{displayName}</strong>
           </div>
-          <button className="toggle" onClick={() => setCollapsed(s => !s)} title={collapsed ? "Expandir" : "Colapsar"}>
+          <button
+            className="toggle"
+            onClick={() => setCollapsed(s => !s)}
+            title={collapsed ? "Expandir" : "Colapsar"}
+          >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>
         </div>
@@ -65,19 +89,30 @@ export default function AdminLayout() {
               key={to}
               to={to}
               end={end}
-              className={({ isActive }) => `item ${isActive ? "active" : ""} ${disabled ? "disabled" : ""}`}
+              className={({ isActive }) =>
+                `item ${isActive ? "active" : ""} ${disabled ? "disabled" : ""}`
+              }
               onClick={e => disabled && e.preventDefault()}
               title={collapsed ? label : undefined}
             >
               <Icon className="ic" size={18} />
               <span className="txt">{label}</span>
-              {!collapsed && typeof badge === "number" && badge > 0 && <span className="pill">{badge}</span>}
+              {!collapsed && typeof badge === "number" && badge > 0 && (
+                <span className="pill">{badge}</span>
+              )}
             </NavLink>
           ))}
         </nav>
 
-        <button className="logout" onClick={async () => { await logoutApi(); navigate("/login", { replace: true }); }}>
-          <LogOut className="ic" size={18} /><span className="txt">Salir</span>
+        <button
+          className="logout"
+          onClick={async () => {
+            await logoutApi();
+            navigate("/login", { replace: true });
+          }}
+        >
+          <LogOut className="ic" size={18} />
+          <span className="txt">Salir</span>
         </button>
       </aside>
 

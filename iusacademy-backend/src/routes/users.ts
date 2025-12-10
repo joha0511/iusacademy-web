@@ -1,170 +1,295 @@
 // src/routes/users.ts
-import { Router, type Request, type Response } from 'express';
-import { prisma } from '../prisma';
-import { Prisma } from '@prisma/client';
-import bcrypt from 'bcrypt';
+import { Router } from "express";
+import bcrypt from "bcryptjs";
+import { prisma } from "../prisma";
+import { sendAccessEmail } from "../email";
 import {
-  listUsersSchema,
-  updateUserSchema,
-  createUserSchema, 
-} from '../schemas/users';
+  TEMP_PASSWORD_TTL_DAYS,
+  isUnifranzEmail,
+  generarPasswordTemporal,
+  materiaToEnum,
+} from "../utils";
+import { Rol } from "@prisma/client";
 
-export const usersRouter = Router();
+const router = Router();
 
-/* GET /api/users*/
-usersRouter.get('/', async (req: Request, res: Response): Promise<void> => {
+/* ======================================================
+   GET /api/usuarios
+   ====================================================== */
+router.get("/", async (_req, res) => {
   try {
-    const { q, page, pageSize } = listUsersSchema.parse(req.query);
-
-    const where: Prisma.UserWhereInput | undefined = q
-      ? {
-          OR: [
-            { firstName: { contains: q, mode: Prisma.QueryMode.insensitive } },
-            { lastName:  { contains: q, mode: Prisma.QueryMode.insensitive } },
-            { email:     { contains: q, mode: Prisma.QueryMode.insensitive } },
-            { username:  { contains: q, mode: Prisma.QueryMode.insensitive } },
-          ],
-        }
-      : undefined;
-
-    const [items, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          username: true,
-          role: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      prisma.user.count({ where }),
-    ]);
-
-    res.status(200).json({ items, total, page, pageSize });
-  } catch (err: any) {
-    console.error(err);
-    res.status(400).json({ error: 'Parámetros inválidos' });
+    const usuarios = await prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+    return res.json(usuarios);
+  } catch (err) {
+    console.error("Error al obtener usuarios:", err);
+    return res.status(500).json({ message: "Error al obtener usuarios" });
   }
 });
 
-/*Crear usuario*/
-usersRouter.post('/', async (req: Request, res: Response): Promise<void> => {
+/* ======================================================
+   GET /api/usuarios/:id
+   ====================================================== */
+router.get("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ message: "ID inválido" });
+  }
+
   try {
-    const data = createUserSchema.parse(req.body);
+    const usuario = await prisma.user.findUnique({ where: { id } });
+    if (!usuario) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
+    return res.json(usuario);
+  } catch (err) {
+    console.error("Error al obtener usuario:", err);
+    return res.status(500).json({ message: "Error al obtener usuario" });
+  }
+});
 
-    const [byEmail, byUser] = await Promise.all([
-      prisma.user.findUnique({ where: { email: data.email } }),
-      prisma.user.findUnique({ where: { username: data.username } }),
-    ]);
-    if (byEmail) { res.status(409).json({ error: 'El email ya está en uso' }); return; }
-    if (byUser)  { res.status(409).json({ error: 'El usuario ya está en uso' }); return; }
+/* ======================================================
+   POST /api/usuarios → crear (sin enviar acceso aún)
+   ====================================================== */
+router.post("/", async (req, res) => {
+  try {
+    const {
+      nombre,
+      apellidos,
+      correo,
+      password, // opcional
+      telefono,
+      rol,
+      materia,
+    } = req.body;
 
-    const passwordHash = await bcrypt.hash(data.password, 10);
+    if (!nombre || !apellidos || !correo) {
+      return res.status(400).json({
+        message:
+          "Nombre, apellidos y correo institucional son obligatorios.",
+      });
+    }
 
-    const created = await prisma.user.create({
+    if (!isUnifranzEmail(correo)) {
+      return res.status(400).json({
+        message: "El correo debe ser institucional (@unifranz.edu.bo).",
+      });
+    }
+
+    const rolDb: Rol =
+      ((rol?.toUpperCase().trim() as Rol) || Rol.ESTUDIANTE);
+
+    const materiaDb =
+      rol === "admin"
+        ? null
+        : materiaToEnum(materia) || "DERECHO_PROCESAL_CIVIL";
+
+    const plainPassword =
+      (password && password.trim()) || generarPasswordTemporal(8);
+    const passwordHash = await bcrypt.hash(plainPassword, 10);
+
+    const usuario = await prisma.user.create({
       data: {
-        firstName: data.firstName,
-        lastName:  data.lastName,
-        username:  data.username,
-        email:     data.email,
-        role:      data.role ?? 'user',
+        nombre: nombre.trim(),
+        apellidos: apellidos.trim(),
+        correo: correo.trim(),
         passwordHash,
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        username: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
+        telefono: (telefono || "").trim(),
+        rol: rolDb,
+        materia: materiaDb as any,
       },
     });
 
-    res.status(201).json(created);
+    return res.status(201).json(usuario);
   } catch (err: any) {
-    if (err?.name === 'ZodError') {
-      res.status(400).json({ error: 'Datos inválidos', details: err.flatten?.() });
-      return;
+    console.error("Error al crear usuario:", err);
+
+    if (err.code === "P2002") {
+      return res
+        .status(400)
+        .json({ message: "Ya existe un usuario con ese correo." });
     }
-    if (err?.code === 'P2002') { 
-      res.status(409).json({ error: 'Dato duplicado único' });
-      return;
-    }
-    console.error(err);
-    res.status(500).json({ error: 'Error interno' });
+
+    return res.status(500).json({ message: "Error al crear usuario" });
   }
 });
 
-/*Actualizar usuario*/
-usersRouter.put('/:id', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const parsed = updateUserSchema.parse({ ...req.body, id: req.params.id });
+/* ======================================================
+   PUT /api/usuarios/:id
+   ====================================================== */
+router.put("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ message: "ID inválido" });
+  }
 
-    const dataToUpdate: Prisma.UserUpdateInput = {
-      firstName: parsed.firstName,
-      lastName:  parsed.lastName,
-      username:  parsed.username,
-      email:     parsed.email,
-      role:      parsed.role,
+  try {
+    const {
+      nombre,
+      apellidos,
+      correo,
+      password,
+      telefono,
+      rol,
+      materia,
+    } = req.body;
+
+    if (!nombre || !apellidos || !correo) {
+      return res.status(400).json({
+        message:
+          "Nombre, apellidos y correo institucional son obligatorios.",
+      });
+    }
+
+    if (!isUnifranzEmail(correo)) {
+      return res.status(400).json({
+        message: "El correo debe ser institucional (@unifranz.edu.bo).",
+      });
+    }
+
+    const rolDb: Rol =
+      ((rol?.toUpperCase().trim() as Rol) || Rol.ESTUDIANTE);
+
+    const materiaDb =
+      rol === "admin"
+        ? null
+        : materiaToEnum(materia) || "DERECHO_PROCESAL_CIVIL";
+
+    let dataUpdate: any = {
+      nombre: nombre.trim(),
+      apellidos: apellidos.trim(),
+      correo: correo.trim(),
+      telefono: (telefono || "").trim(),
+      rol: rolDb,
+      materia: materiaDb as any,
     };
 
-    if (parsed.password) {
-      (dataToUpdate as any).passwordHash = await bcrypt.hash(parsed.password, 10);
+    if (password && password.trim() !== "") {
+      dataUpdate.passwordHash = await bcrypt.hash(password.trim(), 10);
     }
 
-    if (parsed.email) {
-      const u = await prisma.user.findUnique({ where: { email: parsed.email } });
-      if (u && u.id !== parsed.id) { res.status(409).json({ error: 'El email ya está en uso' }); return; }
-    }
-    if (parsed.username) {
-      const u = await prisma.user.findUnique({ where: { username: parsed.username } });
-      if (u && u.id !== parsed.id) { res.status(409).json({ error: 'El usuario ya está en uso' }); return; }
-    }
-
-    const updated = await prisma.user.update({
-      where: { id: parsed.id },
-      data: dataToUpdate,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        username: true,
-        role: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    const usuario = await prisma.user.update({
+      where: { id },
+      data: dataUpdate,
     });
 
-    res.status(200).json(updated);
+    return res.json(usuario);
   } catch (err: any) {
-    if (err?.name === 'ZodError') { res.status(400).json({ error: 'Datos inválidos' }); return; }
-    if (err?.code === 'P2025') { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
-    if (err?.code === 'P2002') { res.status(409).json({ error: 'Dato duplicado único' }); return; }
-    console.error(err);
-    res.status(500).json({ error: 'Error interno' });
+    console.error("Error al actualizar usuario:", err);
+    return res.status(500).json({ message: "Error al actualizar usuario" });
   }
 });
 
-/* Eliminar usuario*/
-usersRouter.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+/* ======================================================
+   DELETE /api/usuarios/:id
+   ====================================================== */
+router.delete("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ message: "ID inválido" });
+  }
+
   try {
-    await prisma.user.delete({ where: { id: req.params.id } });
-    res.status(200).json({ ok: true });
+    await prisma.user.delete({ where: { id } });
+    return res.json({ message: "Usuario eliminado correctamente" });
   } catch (err: any) {
-    if (err?.code === 'P2025') { res.status(404).json({ error: 'Usuario no encontrado' }); return; }
-    console.error(err);
-    res.status(500).json({ error: 'Error interno' });
+    console.error("Error al eliminar usuario:", err);
+    return res.status(500).json({ message: "Error al eliminar usuario" });
   }
 });
 
-export default usersRouter;
+/* ======================================================
+   POST /api/usuarios/:id/enviar-acceso
+   → temp password + email (AJUSTADO TIMEZONE)
+   ====================================================== */
+router.post("/:id/enviar-acceso", async (req, res) => {
+  const id = Number(req.params.id);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ message: "ID inválido" });
+  }
+
+  try {
+    const usuario = await prisma.user.findUnique({
+      where: { id },
+    });
+
+    if (!usuario) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
+
+    const accessCount = usuario.accessEmailCount ?? 0;
+
+    // Si ya usó su contraseña temporal, no se permite reenviar
+    if (accessCount > 0 && usuario.mustChangePassword === false) {
+      return res.status(400).json({
+        message:
+          "Este usuario ya cambió su contraseña temporal. " +
+          "Si necesita ayuda, realiza un reseteo manual de contraseña.",
+      });
+    }
+
+    const now = new Date();
+    const expiresAt = usuario.tempPasswordExpiresAt
+      ? new Date(usuario.tempPasswordExpiresAt)
+      : null;
+
+    // Si ya tiene una temporal vigente, no permitir nuevo envío
+    if (usuario.mustChangePassword && expiresAt && expiresAt > now) {
+      const msLeft = expiresAt.getTime() - now.getTime();
+      const hoursLeft = Math.round(msLeft / (1000 * 60 * 60));
+
+      return res.status(400).json({
+        message:
+          `Este usuario ya tiene una contraseña temporal activa. ` +
+          `Podrás reenviar el acceso cuando expire (en aprox. ${hoursLeft} h).`,
+      });
+    }
+
+    // 🔐 8 caracteres, igual que el backend móvil
+    const passwordTemporal = generarPasswordTemporal(8);
+    const passwordHash = await bcrypt.hash(passwordTemporal, 10);
+
+    // ⚠️ AQUÍ ESTABA EL PROBLEMA ANTES
+    // Ahora dejamos que PostgreSQL ponga la hora local (America/La_Paz)
+    await prisma.$executeRawUnsafe(
+      `
+      UPDATE "User"
+      SET "passwordHash" = $1,
+          "mustChangePassword" = true,
+          "accessEmailCount" = "accessEmailCount" + 1,
+          "lastAccessEmailAt" = NOW(),
+          "tempPasswordExpiresAt" = NOW() + $2 * INTERVAL '1 day'
+      WHERE id = $3
+      `,
+      passwordHash,
+      TEMP_PASSWORD_TTL_DAYS,
+      id
+    );
+
+    const appWebUrl = process.env.APP_URL || "http://localhost:5173";
+    const appMobileUrl = process.env.APP_MOBILE_URL;
+    const nombreCompleto = `${usuario.nombre} ${usuario.apellidos ?? ""}`.trim();
+
+    await sendAccessEmail(
+      usuario.correo,
+      nombreCompleto,
+      passwordTemporal,
+      appWebUrl,
+      appMobileUrl,
+      TEMP_PASSWORD_TTL_DAYS
+    );
+
+    return res.json({
+      message:
+        "Acceso enviado correctamente al correo institucional del usuario.",
+    });
+  } catch (err: any) {
+    console.error("Error al enviar acceso:", err);
+    return res
+      .status(500)
+      .json({ message: "Error al enviar acceso al usuario" });
+  }
+});
+
+export default router;

@@ -1,13 +1,14 @@
 // src/pages/Login.tsx
-import type { FormEvent } from 'react';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { loginApi, meApi } from '@/services/auth';
+import type { FormEvent } from "react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4001";
 
 export default function Login() {
   const [showPwd, setShowPwd] = useState(false);
-  const [userOrEmail, setUserOrEmail] = useState('');
-  const [pwd, setPwd] = useState('');
+  const [correo, setCorreo] = useState("");
+  const [pwd, setPwd] = useState("");
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -17,32 +18,61 @@ export default function Login() {
     e.preventDefault();
     setError(null);
 
-    if (!userOrEmail.trim() || !pwd.trim()) {
-      setError('Por favor, completa tus credenciales.');
+    if (!correo.trim() || !pwd.trim()) {
+      setError("Por favor, completa tus credenciales.");
       return;
     }
 
     setLoading(true);
     try {
-      // login → cookie httpOnly
-      await loginApi(userOrEmail.trim(), pwd);
+      const res = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          correo: correo.trim(),
+          password: pwd,
+        }),
+      });
 
-      if (remember) localStorage.setItem('ius.remember', '1');
-      else localStorage.removeItem('ius.remember');
+      const data = await res.json();
 
-      const me = await meApi();
-      if (!me) throw new Error('No se pudo obtener la sesión');
+      if (!res.ok) {
+        throw new Error(data?.message || "Usuario o contraseña inválidos.");
+      }
+
+      const { user, forceChangePassword } = data;
+
+      if (!user) {
+        throw new Error("No se pudo obtener la información del usuario.");
+      }
+
+      // Guardar sesión básica en localStorage (puedes adaptarlo a tu AuthContext)
+      if (remember) {
+        localStorage.setItem("ius.remember", "1");
+      } else {
+        localStorage.removeItem("ius.remember");
+      }
+      localStorage.setItem("ius.user", JSON.stringify(user));
+
+      if (forceChangePassword) {
+        // Aquí luego puedes hacer una pantalla especial de cambio de contraseña
+        alert(
+          "Estás usando una contraseña temporal. Por seguridad debes cambiarla al ingresar a tu panel."
+        );
+      }
+
+      const role = String(user.role || "").toLowerCase();
 
       const path =
-        me.role === 'ADMIN'
-          ? '/admin'
-          : me.role === 'DOCENTE'
-          ? '/docente'
-          : '/estudiante';
+        role === "admin"
+          ? "/admin"
+          : role === "docente"
+          ? "/docente"
+          : "/estudiante";
 
       navigate(path, { replace: true });
     } catch (e: any) {
-      setError(e?.message || 'Usuario o contraseña inválidos.');
+      setError(e?.message || "Usuario o contraseña inválidos.");
     } finally {
       setLoading(false);
     }
@@ -51,26 +81,32 @@ export default function Login() {
   return (
     <main className="login">
       <section className="login__card" aria-labelledby="login-title">
-        <h1 id="login-title" className="login__title">Iniciar sesión</h1>
+        <h1 id="login-title" className="login__title">
+          Iniciar sesión
+        </h1>
 
         <form className="login__form" onSubmit={onSubmit} noValidate>
-          <label className="login__label" htmlFor="user">Usuario o Email</label>
+          <label className="login__label" htmlFor="user">
+            Correo institucional
+          </label>
           <input
             id="user"
-            type="text"
+            type="email"
             className="login__input"
-            placeholder="tu.usuario o tu@mail.com"
-            value={userOrEmail}
-            onChange={(e) => setUserOrEmail(e.target.value)}
+            placeholder="tu.nombre@unifranz.edu.bo"
+            value={correo}
+            onChange={(e) => setCorreo(e.target.value)}
             required
             autoComplete="username"
           />
 
-          <label className="login__label" htmlFor="password">Contraseña</label>
+          <label className="login__label" htmlFor="password">
+            Contraseña
+          </label>
           <div className="login__pwdwrap">
             <input
               id="password"
-              type={showPwd ? 'text' : 'password'}
+              type={showPwd ? "text" : "password"}
               className="login__input login__input--pwd"
               placeholder="••••••••"
               value={pwd}
@@ -82,9 +118,11 @@ export default function Login() {
               type="button"
               className="login__toggle"
               onClick={() => setShowPwd((s) => !s)}
-              aria-label={showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+              aria-label={
+                showPwd ? "Ocultar contraseña" : "Mostrar contraseña"
+              }
             >
-              {showPwd ? 'Ocultar' : 'Mostrar'}
+              {showPwd ? "Ocultar" : "Mostrar"}
             </button>
           </div>
 
@@ -97,20 +135,45 @@ export default function Login() {
             <span>Recordarme</span>
           </label>
 
-          {error && <div className="login__error" role="alert">{error}</div>}
+          {error && (
+            <div className="login__error" role="alert">
+              {error}
+            </div>
+          )}
 
-          <button type="submit" className="btn btn--primary" disabled={loading}>
-            {loading ? 'Entrando…' : 'Entrar'}
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={loading}
+          >
+            {loading ? "Entrando…" : "Entrar"}
           </button>
         </form>
 
-        <div className="login__sep" role="separator" aria-label="o continuar con">
+        <div
+          className="login__sep"
+          role="separator"
+          aria-label="o continuar con"
+        >
           <span>o continuar con</span>
         </div>
 
-        <button type="button" className="btn btn--google" onClick={() => alert('OAuth pendiente')}>
-          <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" className="g-icon">
-            <path fill="#EA4335" d="M12 10.2v3.6h5.1c-.2 1.2-1.5 3.6-5.1 3.6-3.1 0-5.6-2.6-5.6-5.7S8.9 6 12 6c1.8 0 3 .8 3.7 1.5l2.5-2.4C16.8 3.8 14.6 3 12 3 6.9 3 2.7 7.1 2.7 12.3S6.9 21.6 12 21.6c6.9 0 9.3-4.9 9.3-7.4 0-.5 0-.8-.1-1.2H12z"/>
+        <button
+          type="button"
+          className="btn btn--google"
+          onClick={() => alert("OAuth pendiente")}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            className="g-icon"
+          >
+            <path
+              fill="#EA4335"
+              d="M12 10.2v3.6h5.1c-.2 1.2-1.5 3.6-5.1 3.6-3.1 0-5.6-2.6-5.6-5.7S8.9 6 12 6c1.8 0 3 .8 3.7 1.5l2.5-2.4C16.8 3.8 14.6 3 12 3 6.9 3 2.7 7.1 2.7 12.3S6.9 21.6 12 21.6c6.9 0 9.3-4.9 9.3-7.4 0-.5 0-.8-.1-1.2H12z"
+            />
           </svg>
           Continuar con Google
         </button>

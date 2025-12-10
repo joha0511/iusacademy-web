@@ -1,439 +1,1239 @@
 // src/pages/admin/AdminCrearUsuario.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  Mail,
+  Pencil,
+  Trash2,
+  Clock,
+  UserPlus,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 
 /** ========= Config ========= */
-const API_BASE = (import.meta as any)?.env?.VITE_API_BASE || "http://localhost:4000";
+const API_BASE =
+  (import.meta as any)?.env?.VITE_API_BASE || "http://localhost:4001";
 
-type Role = "admin" | "docente" | "estudiante";
-type RoleApi = "ADMIN" | "DOCENTE" | "ESTUDIANTE";
+// longitud de la contraseña temporal generada al crear usuario
+const TEMP_PASSWORD_LENGTH = 8;
+
+// ⚠️ Fix de zona horaria para el backend WEB (UTC → Bolivia -4h)
+const MS_PER_HOUR = 60 * 60 * 1000;
+const TZ_FIX_HOURS = 4;
 
 /** ========= Tipos ========= */
-interface NewUser {
-  name: string; lastname: string; email: string; username: string; password: string; role: Role;
-}
-interface UserRow {
-  id: string; name: string; lastname: string; email: string; username: string; role: Role;
-}
+type Rol = "admin" | "docente" | "estudiante";
+type Materia =
+  | "Derecho Procesal Civil"
+  | "Derecho Digital Penal"
+  | "Derecho Corporativo Digital"
+  | "Contratos";
 
-/** ========= Helpers API ========= */
-async function apiCreateUser(input: {
-  firstName: string; lastName: string; email: string; username: string; password: string; role: RoleApi;
-}) {
-  const r = await fetch(`${API_BASE}/api/auth/register`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.error ?? "No se pudo crear el usuario");
-  return data;
-}
-async function apiListUsers(params: { q?: string; page?: number; pageSize?: number }) {
-  const usp = new URLSearchParams();
-  if (params.q) usp.set("q", params.q);
-  if (params.page) usp.set("page", String(params.page));
-  if (params.pageSize) usp.set("pageSize", String(params.pageSize));
-  const r = await fetch(`${API_BASE}/api/users?${usp.toString()}`);
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.error ?? "No se pudo listar usuarios");
-  return data as {
-    items: Array<{ id: string; firstName: string; lastName: string; email: string; username: string; role: RoleApi; createdAt: string; updatedAt: string; }>;
-    total: number; page: number; pageSize: number;
-  };
-}
-async function apiUpdateUser(input: {
-  id: string; firstName: string; lastName: string; email: string; username: string; role: RoleApi; password?: string;
-}) {
-  const r = await fetch(`${API_BASE}/api/users/${input.id}`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.error ?? "No se pudo actualizar");
-  return data as { id: string; firstName: string; lastName: string; email: string; username: string; role: RoleApi; };
-}
-async function apiDeleteUser(id: string) {
-  const r = await fetch(`${API_BASE}/api/users/${id}`, { method: "DELETE" });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.error ?? "No se pudo eliminar");
-  return data;
+interface Usuario {
+  id: string;
+  nombre: string;
+  apellidos: string;
+  correo: string;
+  telefono: string;
+  rol: Rol;
+  materia: Materia | null;
+
+  mustChangePassword: boolean;
+  lastAccessEmailAt: string | null;
+  tempPasswordExpiresAt: string | null;
 }
 
-/** ========= Componente ========= */
-export default function AdminCrearUsuario() {
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [total, setTotal] = useState(0);
-  const [open, setOpen] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const emptyForm: NewUser = { name: "", lastname: "", email: "", username: "", password: "", role: "docente" };
-  const [form, setForm] = useState<NewUser>(emptyForm);
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  const [query, setQuery] = useState(""); const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(8);
-
-  /** ===== Validación ===== */
-  type FormErrors = Partial<Record<keyof NewUser, string>>;
-  const [errors, setErrors] = useState<FormErrors>({});
-
-  const nameRe = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ ]{2,}$/;
-  const usernameRe = /^[a-z0-9._]{3,24}$/;
-  const emailRe = /^[a-zA-Z0-9._%+-]+@unifranz\.edu\.bo$/i;         // <- dominio forzado
-  const passwordRe = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;               // 8+, 1 letra, 1 número
-
-  function validate(values: NewUser, isEdit: boolean): FormErrors {
-    const e: FormErrors = {};
-    if (!nameRe.test(values.name)) e.name = "Ingresa nombres válidos (sólo letras y espacios).";
-    if (!nameRe.test(values.lastname)) e.lastname = "Ingresa apellidos válidos.";
-    if (!emailRe.test(values.email)) e.email = "Usa tu correo @unifranz.edu.bo";
-    if (!usernameRe.test(values.username)) e.username = "Usuario 3–24 (minúsculas, números, punto o guion bajo).";
-    if (!isEdit && !passwordRe.test(values.password)) e.password = "Mínimo 8 caracteres, al menos una letra y un número.";
-    return e;
+/** ========= Helpers materias ========= */
+const materiaFromEnum = (value: string | null): Materia | null => {
+  if (!value) return null;
+  switch (value) {
+    case "DERECHO_PROCESAL_CIVIL":
+      return "Derecho Procesal Civil";
+    case "DERECHO_DIGITAL_PENAL":
+      return "Derecho Digital Penal";
+    case "DERECHO_CORPORATIVO_DIGITAL":
+      return "Derecho Corporativo Digital";
+    case "CONTRATOS":
+      return "Contratos";
+    default:
+      return null;
   }
+};
 
-  /** ===== Carga ===== */
+const ROLES: { key: Rol; label: string }[] = [
+  { key: "admin", label: "Admin" },
+  { key: "docente", label: "Docente" },
+  { key: "estudiante", label: "Estudiante" },
+];
+
+const MATERIAS: Materia[] = [
+  "Derecho Procesal Civil",
+  "Derecho Digital Penal",
+  "Derecho Corporativo Digital",
+  "Contratos",
+];
+
+// 🔐 Generar contraseña aleatoria (8 caracteres por defecto)
+const generatePassword = (length = TEMP_PASSWORD_LENGTH) => {
+  const chars =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  let pwd = "";
+  for (let i = 0; i < length; i++) {
+    pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return pwd;
+};
+
+// ⏱ formatea el tiempo restante
+const formatRemaining = (msLeft: number) => {
+  if (msLeft <= 0) return "0d 0h";
+  const totalSec = Math.floor(msLeft / 1000);
+  const days = Math.floor(totalSec / (24 * 3600));
+  const hours = Math.floor((totalSec % (24 * 3600)) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}min`;
+  return `${minutes}min`;
+};
+
+export default function AdminCrearUsuario() {
+  /** ====== lista usuarios ====== */
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [loadingList, setLoadingList] = useState(false);
+  const [errorList, setErrorList] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  /** ====== formulario (panel) ====== */
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const [password, setPassword] = useState(""); // generada, no visible
+
+  const [nombre, setNombre] = useState("");
+  const [apellidos, setApellidos] = useState("");
+  const [correo, setCorreo] = useState("");
+  const [telefono, setTelefono] = useState("");
+  const [rol, setRol] = useState<Rol>("docente");
+  const [materia, setMateria] = useState<Materia>("Derecho Procesal Civil");
+
+  /** ====== envío acceso ====== */
+  const [sendingAccessId, setSendingAccessId] = useState<string | null>(null);
+
+  // para actualizar labels de expiración
+  const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    let on = true;
-    (async () => {
-      setLoading(true); setErr(null);
-      try {
-        const data = await apiListUsers({ q: query.trim(), page, pageSize });
-        if (!on) return;
-        const rows = data.items.map(u => ({
-          id: u.id, name: u.firstName, lastname: u.lastName, email: u.email, username: u.username,
-          role: (u.role as string).toLowerCase() as Role,
-        }));
-        setUsers(rows); setTotal(data.total);
-      } catch (e: any) { if (on) setErr(e.message || "Error al cargar usuarios"); }
-      finally { if (on) setLoading(false); }
-    })();
-    return () => { on = false; };
-  }, [query, page, pageSize]);
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
-  /** ===== Handlers ===== */
-  const onChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target; setForm(prev => ({ ...prev, [name]: value })); setErrors(prev => ({ ...prev, [name]: undefined }));
-  };
-
-  const startCreate = () => { setEditingId(null); setForm(emptyForm); setOpen(true); setErr(null); setMsg(null); setErrors({}); };
-
-  const startEdit = (u: UserRow) => {
-    setEditingId(u.id);
-    setForm({ name: u.name, lastname: u.lastname, email: u.email, username: u.username, password: "", role: u.role });
-    setOpen(true); setErr(null); setMsg(null); setErrors({});
-  };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setErr(null); setMsg(null);
-    const v = validate(form, !!editingId);
-    if (Object.keys(v).length) { setErrors(v); setErr("Revisa los campos marcados."); return; }
-
-    setLoading(true);
+  /** ==========================
+   *    Cargar usuarios
+   *  ========================== */
+  const fetchUsuarios = async () => {
     try {
-      if (editingId) {
-        const updated = await apiUpdateUser({
-          id: editingId,
-          firstName: form.name, lastName: form.lastname, email: form.email, username: form.username,
-          role: form.role.toUpperCase() as RoleApi,
-        });
-        setUsers(prev => prev.map(u => u.id === editingId
-          ? { id: updated.id, name: updated.firstName, lastname: updated.lastName, email: updated.email, username: updated.username, role: (updated.role as string).toLowerCase() as Role }
-          : u
-        ));
-        setMsg("Usuario actualizado.");
-      } else {
-        const created = await apiCreateUser({
-          firstName: form.name, lastName: form.lastname, email: form.email, username: form.username, password: form.password,
-          role: form.role.toUpperCase() as RoleApi,
-        });
-        setUsers(prev => [{ id: created.id, name: created.firstName, lastname: created.lastName, email: created.email, username: created.username, role: (created.role as string).toLowerCase() as Role }, ...prev]);
-        setTotal(t => t + 1); setMsg("Usuario creado con éxito.");
+      setLoadingList(true);
+      setErrorList(null);
+      const res = await fetch(`${API_BASE}/api/usuarios`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error("Error fetch usuarios:", data);
+        setErrorList(
+          data.message || "Ocurrió un error al obtener los usuarios."
+        );
+        return;
       }
-      setForm(emptyForm); setEditingId(null); setPage(1);
-    } catch (e: any) { setErr(e?.message || "Error inesperado"); }
-    finally { setLoading(false); }
+
+      if (!Array.isArray(data)) {
+        console.error("Respuesta inesperada /api/usuarios:", data);
+        setErrorList("Formato de respuesta inválido en /api/usuarios.");
+        return;
+      }
+
+      const parsed: Usuario[] = data.map((u: any) => ({
+        id: String(u.id),
+        nombre: u.nombre,
+        apellidos: u.apellidos,
+        correo: u.correo,
+        telefono: u.telefono || "",
+        rol: (u.rol?.toLowerCase() || "estudiante") as Rol,
+        materia: materiaFromEnum(u.materia) ?? null,
+        mustChangePassword: !!u.mustChangePassword,
+        lastAccessEmailAt: u.lastAccessEmailAt ?? null,
+        tempPasswordExpiresAt: u.tempPasswordExpiresAt ?? null,
+      }));
+
+      setUsuarios(parsed);
+    } catch (err) {
+      console.error("Error al obtener usuarios:", err);
+      setErrorList("Ocurrió un error al obtener los usuarios.");
+    } finally {
+      setLoadingList(false);
+    }
   };
 
-  const removeUser = async (id: string) => {
-    const u = users.find(x => x.id === id); if (!u) return;
-    if (!confirm(`¿Eliminar al usuario "${u.name} ${u.lastname}" (@${u.username})?`)) return;
-    setLoading(true); setErr(null); setMsg(null);
-    try { await apiDeleteUser(id); setUsers(prev => prev.filter(x => x.id !== id)); setTotal(t => Math.max(0, t - 1)); if (editingId === id) { setEditingId(null); setForm(emptyForm); } setMsg("Usuario eliminado."); }
-    catch (e: any) { setErr(e?.message || "No se pudo eliminar"); }
-    finally { setLoading(false); }
+  useEffect(() => {
+    fetchUsuarios();
+  }, []);
+
+  /** ==========================
+   *    Helpers formulario
+   *  ========================== */
+  const resetForm = () => {
+    setEditingId(null);
+    setPassword("");
+    setNombre("");
+    setApellidos("");
+    setCorreo("");
+    setTelefono("");
+    setRol("docente");
+    setMateria("Derecho Procesal Civil");
+    setFormError(null);
   };
 
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const currentPage = Math.min(page, pageCount);
+  // 👉 Botón "Agregar usuario"
+  const handleAddMainClick = () => {
+    if (panelOpen && !editingId) {
+      setPanelOpen(false);
+      return;
+    }
+    resetForm();
+    setPassword(generatePassword(TEMP_PASSWORD_LENGTH));
+    setPanelOpen(true);
+  };
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase(); if (!q) return users;
-    return users.filter(u => [u.name, u.lastname, u.email, u.username].some(f => f.toLowerCase().includes(q)));
-  }, [users, query]);
+  const openEdit = (u: Usuario) => {
+    setEditingId(u.id);
+    setPassword("");
+    setNombre(u.nombre);
+    setApellidos(u.apellidos);
+    setCorreo(u.correo);
+    setTelefono(u.telefono);
+    setRol(u.rol);
+    setMateria(u.materia ?? "Derecho Procesal Civil");
+    setFormError(null);
+    setPanelOpen(true);
+  };
 
-  /** ===== UI ===== */
+  const validar = () => {
+    if (!nombre.trim() || !apellidos.trim() || !correo.trim()) {
+      setFormError(
+        "Nombre, apellidos y correo institucional son obligatorios."
+      );
+      return false;
+    }
+    if (!correo.endsWith("@unifranz.edu.bo")) {
+      setFormError("El correo debe ser institucional (@unifranz.edu.bo).");
+      return false;
+    }
+    setFormError(null);
+    return true;
+  };
+
+  /** ==========================
+   *   Crear / Actualizar
+   *  ========================== */
+  const handleGuardar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validar()) return;
+
+    try {
+      setSaving(true);
+
+      const payload: any = {
+        nombre: nombre.trim(),
+        apellidos: apellidos.trim(),
+        correo: correo.trim(),
+        telefono: telefono.trim(),
+        rol,
+        materia,
+      };
+
+      if (!editingId) {
+        payload.password = password.trim();
+      }
+
+      const url = editingId
+        ? `${API_BASE}/api/usuarios/${editingId}`
+        : `${API_BASE}/api/usuarios`;
+      const method = editingId ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error("Error guardar usuario:", data);
+        setFormError(data.message || "No se pudo guardar el usuario.");
+        return;
+      }
+
+      const usuarioGuardado: Usuario = {
+        id: String(data.id),
+        nombre: data.nombre,
+        apellidos: data.apellidos,
+        correo: data.correo,
+        telefono: data.telefono || "",
+        rol: (data.rol?.toLowerCase() || "estudiante") as Rol,
+        materia: materiaFromEnum(data.materia) ?? null,
+        mustChangePassword: !!data.mustChangePassword,
+        lastAccessEmailAt: data.lastAccessEmailAt ?? null,
+        tempPasswordExpiresAt: data.tempPasswordExpiresAt ?? null,
+      };
+
+      if (editingId) {
+        setUsuarios((prev) =>
+          prev.map((u) => (u.id === editingId ? usuarioGuardado : u))
+        );
+      } else {
+        setUsuarios((prev) => [usuarioGuardado, ...prev]);
+      }
+
+      resetForm();
+    } catch (err) {
+      console.error("Error al guardar usuario:", err);
+      setFormError("Ocurrió un error al guardar el usuario.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEliminar = async (u: Usuario) => {
+    if (
+      !confirm(
+        `¿Seguro que deseas eliminar a "${u.nombre} ${u.apellidos}" (${u.correo})?`
+      )
+    )
+      return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/usuarios/${u.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error("Error eliminar usuario:", data);
+        alert(data.message || "No se pudo eliminar el usuario.");
+        return;
+      }
+
+      setUsuarios((prev) => prev.filter((x) => x.id !== u.id));
+    } catch (err) {
+      console.error("Error al eliminar usuario:", err);
+      alert("Ocurrió un error al eliminar el usuario.");
+    }
+  };
+
+  /** ==========================
+   *   Enviar acceso por correo
+   *  ========================== */
+  const handleEnviarAcceso = async (user: Usuario) => {
+    try {
+      setSendingAccessId(user.id);
+
+      const res = await fetch(
+        `${API_BASE}/api/usuarios/${user.id}/enviar-acceso`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        console.error("Error enviar acceso:", data);
+        alert(
+          data.message || "No se pudo enviar el correo de acceso temporal."
+        );
+        return;
+      }
+
+      alert(
+        `Se envió un correo a ${user.correo} con la contraseña temporal y enlaces de acceso.`
+      );
+
+      await fetchUsuarios();
+    } catch (err) {
+      console.error("Error al enviar acceso:", err);
+      alert("Ocurrió un problema al enviar el correo de acceso.");
+    } finally {
+      setSendingAccessId(null);
+    }
+  };
+
+  /** ==========================
+   *   Estilos badge rol
+   *  ========================== */
+  const badgeStylesForRole = (r: Rol) => {
+    switch (r) {
+      case "admin":
+        return { bg: "#FFF0F0", text: "#C44242" };
+      case "docente":
+        return { bg: "#FFF4E6", text: "#E36C2D" };
+      case "estudiante":
+        return { bg: "#EAF7FF", text: "#245B8F" };
+      default:
+        return { bg: "#EEE", text: "#111827" };
+    }
+  };
+
+  /** ==========================
+   *   Filtro búsqueda
+   *  ========================== */
+  const filteredUsuarios = usuarios.filter((u) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      u.nombre.toLowerCase().includes(q) ||
+      u.apellidos.toLowerCase().includes(q) ||
+      u.correo.toLowerCase().includes(q) ||
+      u.telefono.toLowerCase().includes(q)
+    );
+  });
+
   return (
-    <main className="cu-page">
-      <header className="hdr">
-        <div className="ttl-wrap">
-          <h1 className="ttl">Usuarios</h1>
-          <p className="sub">Gestiona y administra los usuarios del sistema.</p>
-        </div>
-        <button className="btn-cta" onClick={startCreate}>
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M12 5v14m-7-7h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/></svg>
-          <span>Nuevo usuario</span>
-        </button>
-      </header>
-
-      {/* Panel formulario */}
-      <section className={`panel ${open ? "open" : ""}`} aria-hidden={!open}>
-        <div className="panel__inner">
-          <div className="panel__hdr">
-            <h2 className="panel__ttl">{editingId ? "Editar usuario" : "Crear usuario"}</h2>
-            <button className="iconbtn" onClick={() => setOpen(s => !s)} aria-label="Cerrar panel" title="Cerrar">
-              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-            </button>
-          </div>
-
-          <form className="form" onSubmit={submit} noValidate>
-            <div className="grid">
-              <div className="col">
-                <label>Nombres</label>
-                <input name="name" value={form.name} onChange={onChange} placeholder="María"
-                  className={errors.name ? "invalid" : ""}/>
-                {errors.name && <small className="err-txt">{errors.name}</small>}
-              </div>
-              <div className="col">
-                <label>Apellidos</label>
-                <input name="lastname" value={form.lastname} onChange={onChange} placeholder="Pérez"
-                  className={errors.lastname ? "invalid" : ""}/>
-                {errors.lastname && <small className="err-txt">{errors.lastname}</small>}
-              </div>
-              <div className="col">
-                <label>Email</label>
-                <input type="email" name="email" value={form.email} onChange={onChange} placeholder="usuario@unifranz.edu.bo"
-                  className={errors.email ? "invalid" : ""}/>
-                {errors.email && <small className="err-txt">{errors.email}</small>}
-              </div>
-              <div className="col">
-                <label>Usuario</label>
-                <input name="username" value={form.username} onChange={onChange} placeholder="maria.perez"
-                  className={errors.username ? "invalid" : ""}/>
-                {errors.username && <small className="err-txt">{errors.username}</small>}
-              </div>
-              {!editingId && (
-                <div className="col">
-                  <label>Contraseña</label>
-                  <input type="password" name="password" value={form.password} onChange={onChange} placeholder="••••••••"
-                    className={errors.password ? "invalid" : ""}/>
-                  {errors.password && <small className="err-txt">{errors.password}</small>}
-                </div>
-              )}
-              <div className="col">
-                <label>Rol</label>
-                <select name="role" value={form.role} onChange={onChange}>
-                  <option value="admin">Administrador</option>
-                  <option value="docente">Docente</option>
-                  <option value="estudiante">Estudiante</option>
-                </select>
-              </div>
+    <main className="au-page">
+      {/* HEADER CON CARD BLANCA + BOTÓN ADENTRO */}
+      <header className="au-header">
+        <div className="au-header-card">
+          <div className="au-header-top">
+            <div>
+              <h1 className="au-title">Usuarios</h1>
+              <p className="au-sub">
+                Gestión unificada de administradores, docentes y estudiantes.
+              </p>
             </div>
 
-            {err && <div className="alert err">{err}</div>}
-            {msg && <div className="alert ok">{msg}</div>}
+            <button className="au-add-main" onClick={handleAddMainClick}>
+              <UserPlus size={18} />
+              <span>Agregar usuario</span>
+            </button>
+          </div>
+        </div>
+      </header>
 
-            <div className="actions">
-              <button className="btn-primary" disabled={loading}>
-                {loading ? "Guardando…" : editingId ? "Actualizar usuario" : "Crear usuario"}
-              </button>
+      {/* PANEL FORMULARIO */}
+      <section className={`au-panel ${panelOpen ? "open" : ""}`}>
+        <button
+          type="button"
+          className="au-panel-toggle"
+          onClick={() => setPanelOpen((v) => !v)}
+        >
+          <span>{editingId ? "Editar usuario" : "Nuevo usuario"}</span>
+          {panelOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+
+        {panelOpen && (
+          <form className="au-form" onSubmit={handleGuardar} noValidate>
+            <div className="au-form-grid">
+              <label className="au-label">
+                Correo institucional
+                <input
+                  type="email"
+                  value={correo}
+                  onChange={(e) => setCorreo(e.target.value)}
+                  placeholder="nombre.apellido@unifranz.edu.bo"
+                />
+              </label>
+
+              <label className="au-label">
+                Nombre
+                <input
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  placeholder="Nombre"
+                />
+              </label>
+
+              <label className="au-label">
+                Apellidos
+                <input
+                  value={apellidos}
+                  onChange={(e) => setApellidos(e.target.value)}
+                  placeholder="Apellidos completos"
+                />
+              </label>
+
+              <label className="au-label">
+                Teléfono
+                <input
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  placeholder="+591 ..."
+                />
+              </label>
+
+              {/* ROL */}
+              <div className="au-label au-label-full">
+                <span>Rol</span>
+                <div className="au-chips">
+                  {ROLES.map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => setRol(r.key)}
+                      className={`au-chip ${rol === r.key ? "active" : ""}`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* MATERIA solo si no es admin */}
+              {rol !== "admin" && (
+                <div className="au-label au-label-full">
+                  <span>Materia</span>
+                  <div className="au-mat-box">
+                    {MATERIAS.map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setMateria(m)}
+                        className={`au-mat-item ${
+                          materia === m ? "active" : ""
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {formError && (
+              <div className="au-alert au-alert-err">{formError}</div>
+            )}
+
+            <div className="au-form-actions">
               {editingId && (
-                <button type="button" className="btn-soft" onClick={() => { setEditingId(null); setForm(emptyForm); setErrors({}); }}>
+                <button
+                  type="button"
+                  className="au-btn-secondary"
+                  onClick={resetForm}
+                >
                   Cancelar edición
                 </button>
               )}
+              <button
+                type="submit"
+                className="au-btn-primary"
+                disabled={saving}
+              >
+                {saving
+                  ? "Guardando…"
+                  : editingId
+                  ? "Actualizar usuario"
+                  : "Crear usuario"}
+              </button>
             </div>
           </form>
-        </div>
+        )}
       </section>
 
-      {/* Controles de tabla */}
-      <section className="table-controls">
-        <div className="search">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden><path d="M21 20l-5.6-5.6a7 7 0 10-1.4 1.4L20 21l1-1zM5 10a5 5 0 1110 0A5 5 0 015 10z" fill="currentColor"/></svg>
-          <input value={query} onChange={(e)=>{ setQuery(e.target.value); setPage(1); }} placeholder="Buscar por nombre, apellido, email o usuario…"/>
-        </div>
-        <div className="page-size">
-          <span>Ver</span>
-          <select value={pageSize} onChange={(e)=>{ setPageSize(Number(e.target.value)); setPage(1); }}>
-            <option value={5}>5</option><option value={8}>8</option><option value={10}>10</option><option value={15}>15</option>
-          </select>
-          <span>por página</span>
-        </div>
-      </section>
-
-      {/* Tabla */}
-      <div className="box data-table">
-        <div className="thead">
-          <span>Nombre</span><span>Apellido</span><span>Email</span><span>Usuario</span><span>Rol</span>
-          <span className="center">Acciones</span>
-        </div>
-
-        {filtered.map((u) => (
-          <div className="tr" key={u.id}>
-            <span>{u.name}</span><span>{u.lastname}</span><span>{u.email}</span><span>@{u.username}</span>
-            <span className={`role ${u.role}`}>{u.role}</span>
-            <span className="actions-cell">
-              <button className="iconbtn edit" title="Editar" onClick={() => startEdit(u)}>
-                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"/><path d="M20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
-              </button>
-              <button className="iconbtn del" title="Eliminar" onClick={() => removeUser(u.id)}>
-                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M6 7h12l-1 14H7L6 7zm3-3h6l1 2H8l1-2z"/></svg>
-              </button>
-            </span>
+      {/* CARD SOLO PARA TÍTULO + FILTRO */}
+      <section className="au-reg-card">
+        <div className="au-reg-header">
+          <div>
+            <h2 className="au-list-title">Usuarios registrados</h2>
+            <p className="au-list-sub">
+              Visualiza y gestiona todas las cuentas activas.
+            </p>
           </div>
-        ))}
-        {filtered.length === 0 && <div className="empty">No hay resultados para “{query}”.</div>}
-      </div>
-
-      {/* Paginación */}
-      <div className="pagination">
-        <button className="pg-btn" disabled={currentPage<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>« Anterior</button>
-        <div className="pg-pages">
-          {Array.from({ length: pageCount }, (_, i) => i + 1).map(n => (
-            <button key={n} className={`pg-num ${n===currentPage?"active":""}`} onClick={()=>setPage(n)}>{n}</button>
-          ))}
+          <span className="au-pill-count">
+            {usuarios.length} usuario{usuarios.length === 1 ? "" : "s"}
+          </span>
         </div>
-        <button className="pg-btn" disabled={currentPage>=pageCount} onClick={()=>setPage(p=>Math.min(pageCount,p+1))}>Siguiente »</button>
-      </div>
+
+        <div className="au-search au-search-inline">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path
+              d="M21 20l-4.5-4.5M5 11a6 6 0 1112 0 6 6 0 01-12 0z"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nombre, correo o teléfono…"
+          />
+        </div>
+      </section>
+
+      {/* SECCIÓN TABLA */}
+      <section className="au-table-section">
+        {loadingList && (
+          <div className="au-empty au-empty-inner">
+            <div className="au-spinner" />
+            <p>Cargando usuarios…</p>
+          </div>
+        )}
+
+        {!loadingList && errorList && (
+          <div className="au-empty au-empty-error au-empty-inner">
+            <p>{errorList}</p>
+          </div>
+        )}
+
+        {!loadingList && !errorList && filteredUsuarios.length === 0 && (
+          <div className="au-empty au-empty-inner">
+            <p>
+              No hay usuarios que coincidan con{" "}
+              <strong>{search || "el criterio actual"}</strong>.
+            </p>
+            {!usuarios.length && (
+              <p className="au-empty-hint">
+                Pulsa <strong>“Agregar usuario”</strong> para crear el primero.
+              </p>
+            )}
+          </div>
+        )}
+
+        {!loadingList && !errorList && filteredUsuarios.length > 0 && (
+          <div className="au-table-wrapper">
+            <table className="au-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>Correo</th>
+                  <th>Rol</th>
+                  <th>Materia</th>
+                  <th>Acceso</th>
+                  <th style={{ width: "1%" }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsuarios.map((item) => {
+                  const roleStyles = badgeStylesForRole(item.rol);
+                  const isSending = sendingAccessId === item.id;
+
+                  const expiryTs = item.tempPasswordExpiresAt
+                    ? new Date(item.tempPasswordExpiresAt).getTime()
+                    : null;
+
+                  const hasActiveTemp =
+                    item.mustChangePassword &&
+                    expiryTs !== null &&
+                    expiryTs > now;
+
+                  const neverSentAccess = !item.lastAccessEmailAt;
+                  const alreadyUsedTemp =
+                    !!item.lastAccessEmailAt && !item.mustChangePassword;
+
+                  let canResend = false;
+                  let accessLabel = "Acceso";
+                  let remainingLabel: string | null = null;
+
+                  if (neverSentAccess) {
+                    canResend = true;
+                    accessLabel = "Acceso";
+                  } else if (alreadyUsedTemp) {
+                    canResend = false;
+                    accessLabel = "Usado";
+                  } else if (hasActiveTemp) {
+                    canResend = false;
+                    accessLabel = "En espera";
+
+                    if (expiryTs) {
+                      const rawMsLeft = expiryTs - now;
+                      // ✅ Ajuste +4h porque el backend WEB está adelantado 4h
+                      const fixedMsLeft =
+                        rawMsLeft + TZ_FIX_HOURS * MS_PER_HOUR;
+                      remainingLabel = formatRemaining(fixedMsLeft);
+                    }
+                  } else {
+                    canResend = true;
+                    accessLabel = "Reenviar";
+                  }
+
+                  return (
+                    <tr key={item.id}>
+                      <td>
+                        <div className="au-user-cell">
+                          <div className="au-avatar">
+                            <span>
+                              {item.nombre.charAt(0)}
+                              {item.apellidos.charAt(0)}
+                            </span>
+                          </div>
+                          <div className="au-user-text">
+                            <span className="au-name">
+                              {item.nombre} {item.apellidos}
+                            </span>
+                            {item.telefono && (
+                              <span className="au-phone">
+                                {item.telefono}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="au-email">{item.correo}</span>
+                      </td>
+                      <td>
+                        <span
+                          className="au-role-badge"
+                          style={{
+                            backgroundColor: roleStyles.bg,
+                            color: roleStyles.text,
+                          }}
+                        >
+                          {item.rol.toUpperCase()}
+                        </span>
+                      </td>
+                      <td>
+                        {item.rol !== "admin" && item.materia ? (
+                          <span className="au-materia">{item.materia}</span>
+                        ) : (
+                          <span className="au-materia au-materia-muted">
+                            —
+                          </span>
+                        )}
+                      </td>
+                      <td className="au-cell-access">
+                        <button
+                          className="au-btn au-btn-access"
+                          onClick={() => handleEnviarAcceso(item)}
+                          disabled={isSending || !canResend}
+                          style={
+                            !canResend || isSending
+                              ? { opacity: 0.55 }
+                              : undefined
+                          }
+                        >
+                          {isSending ? (
+                            <span className="au-spinner-sm" />
+                          ) : (
+                            <Mail size={16} />
+                          )}
+                          <span>{isSending ? "Enviando…" : accessLabel}</span>
+                        </button>
+                        {remainingLabel && (
+                          <div className="au-expire-inline">
+                            <Clock size={14} />
+                            <span>Expira en {remainingLabel}</span>
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div className="au-actions">
+                          <button
+                            className="au-btn au-btn-edit"
+                            onClick={() => openEdit(item)}
+                          >
+                            <Pencil size={16} />
+                            <span>Editar</span>
+                          </button>
+
+                          <button
+                            className="au-btn au-btn-del"
+                            onClick={() => handleEliminar(item)}
+                          >
+                            <Trash2 size={16} />
+                            <span>Eliminar</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <style>{styles}</style>
     </main>
   );
 }
 
+/* =============== STYLES =============== */
 const styles = `
 :root{
-  --bg:#FFFFFF; 
-  --text:#1E1E1E; 
-  --sub:#6B6B6B;
-
-  --primary:#FF8A4C; 
-  --accent:#E36C2D;
-  --white:#fff;
-
-  /* SOMBRAS */
-  --shadow-sm: 0 4px 12px rgba(0,0,0,.06);
-  --shadow-md: 0 12px 28px rgba(0,0,0,.08), 0 2px 6px rgba(0,0,0,.04);
-  --shadow-lg: 0 24px 60px rgba(0,0,0,.10);
-
-  --ok:#12a150; 
-  --okbg:#e6faef; 
-  --okbr:#bfead1; 
-  --err:#8a1f1f; 
-  --errbg:#ffe6e6; 
-  --errbr:#ffc7c7;
-}
-.cu-page {
-  padding-top: 3rem; /* más espacio arriba */
-  padding-right: 1.5rem;
-  padding-left: 1.5rem;
-  padding-bottom: 1.5rem;
-
-  background: transparent !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
+  --au-text:#1E1E1E;
+  --au-sub:#6B6B6B;
+  --au-primary:#FF8A4C;
+  --au-primary-dark:#E36C2D;
+  --au-border:#F3D0C6;
+  --au-soft:#FFF3E9;
+  --au-error:#B91C1C;
 }
 
-
-/* Header */
-.hdr{ display:flex; align-items:end; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
-.ttl-wrap{ display:flex; flex-direction:column; gap:.2rem; }
-.ttl{ font-size:1.7rem; font-weight:900; line-height:1; }
-.sub{ color:#8a8a8a; font-size:.95rem; }
-.btn-cta{ display:inline-flex; align-items:center; gap:.5rem; background:var(--primary); color:#fff; font-weight:900; border:none; border-radius:.8rem; padding:.65rem 1rem; cursor:pointer; box-shadow:0 10px 20px rgba(255,138,76,.25); }
-.btn-cta:hover{ background:var(--accent); }
-
-/* Panel formulario (sombras en los bordes) */
-.panel{
-  border:1px solid transparent; 
-  background:#fff; 
-  border-radius:1rem; 
-  overflow:hidden; 
-  max-height:0; 
-  transition:max-height .35s ease, box-shadow .2s;
-  box-shadow: var(--shadow-sm); /* sombra suave por defecto */
-  margin-bottom:1rem; 
+.au-page{
+  background:transparent;
+  padding:2.5rem 1.75rem 1.75rem 1.75rem;
 }
-.panel.open{ 
-  max-height:900px; 
-  box-shadow: var(--shadow-md); /* un poco más marcada al abrir */
-}
-.panel__inner{ padding:1rem; }
-.panel__hdr{ display:flex; align-items:center; justify-content:space-between; }
-.panel__ttl{ font-weight:800; margin:0 0 .75rem; }
-.iconbtn{ border:1px solid transparent; background:#fff; border-radius:.6rem; padding:.4rem; cursor:pointer; color:#6b6b6b; box-shadow:var(--shadow-sm); }
-.iconbtn:hover{ box-shadow:var(--shadow-md); }
 
-/* Form */
-.form{ display:block; }
-.grid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:1rem; }
-@media(max-width:900px){ .grid{ grid-template-columns: 1fr; } }
-label{ font-size:.9rem; font-weight:700; display:block; margin-bottom:.25rem; }
-input, select{
-  width:100%; padding:.9rem 1rem; border-radius:.9rem; border:1px solid #eadcd4; outline:none; background:#fff;
-  box-shadow:var(--shadow-sm); /* sombra leve en inputs */
+/* HEADER */
+.au-header{
+  margin-bottom:1.5rem;
 }
-input:focus, select:focus{ border-color:var(--primary); box-shadow:var(--shadow-md); }
-.invalid{ border-color:#ff6565 !important; box-shadow:var(--shadow-sm), 0 0 0 3px rgba(255,101,101,.18) !important; }
-.err-txt{ color:#b02020; font-size:.8rem; margin-top:.25rem; display:block; }
-.actions{ margin-top:1rem; display:flex; gap:.6rem; }
-.btn-primary{ background:var(--primary); color:#fff; font-weight:900; border:none; padding:.9rem 1.1rem; border-radius:.9rem; cursor:pointer; box-shadow:0 10px 20px rgba(255,138,76,.22); }
-.btn-primary:hover{ background:var(--accent); }
-.btn-soft{ background:#fff; color:#573b2d; border:1px solid #eadcd4; padding:.9rem 1.1rem; border-radius:.9rem; cursor:pointer; box-shadow:var(--shadow-sm); }
-.btn-soft:hover{ box-shadow:var(--shadow-md); }
-.alert{ margin-top:.6rem; padding:.65rem .9rem; border-radius:.7rem; box-shadow:var(--shadow-sm); }
-.ok{ color:var(--ok); background:var(--okbg); border:1px solid var(--okbr); }
-.err{ color:var(--err); background:var(--errbg); border:1px solid var(--errbr); }
-
-/* Tabla (sombras en la tarjeta) */
-.box{ 
-  background:#fff; 
-  border:1px solid transparent; 
-  border-radius:1rem; 
-  box-shadow:var(--shadow-md); 
-  overflow:hidden; 
+.au-header-card{
+  background:#fff;
+  border-radius:1.2rem;
+  border:1px solid var(--au-border);
+  padding:1rem 1.3rem;
+  box-shadow:0 14px 34px rgba(0,0,0,.06);
 }
-.data-table .thead, .data-table .tr{ display:grid; grid-template-columns: 1.2fr 1.2fr 1.8fr 1.2fr .9fr 1fr; gap:.5rem; padding:.85rem 1rem; align-items:center; }
-.data-table .thead{ background:#FFF2EA; font-weight:800; }
-.data-table .tr{ border-top:1px solid #f5e5dc; }
-.center{ text-align:center; }
-.empty{ padding:1rem; text-align:center; color:#7a7a7a; }
-.actions-cell{ display:flex; gap:.4rem; justify-content:center; }
-.iconbtn.edit{ color:#1b4a7a; border-color:#cfe3f7; }
-.iconbtn.edit:hover{ background:#eef6ff; }
-.iconbtn.del{ color:#a12828; border-color:#f3c8c8; }
-.iconbtn.del:hover{ background:#ffecec; }
-.role{ text-transform:capitalize; font-weight:800; padding:.28rem .65rem; border-radius:999px; display:inline-block; text-align:center; }
-.role.admin{ background:#FFE3D3; color:#8a4d2b; }
-.role.docente{ background:#eaf5ff; color:#1b4a7a; }
-.role.estudiante{ background:#eaf9f0; color:#1d6b3d; }
-
-/* Controles de tabla + paginación */
-.table-controls{ display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin:.2rem 0 .6rem; }
-.search{ 
-  flex:1; display:flex; align-items:center; gap:.6rem; 
-  background:#fff; border:1px solid transparent; border-radius:.9rem; padding:.55rem .8rem; 
-  box-shadow: var(--shadow-md); 
+.au-header-top{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:1rem;
 }
-.search input{ border:none; outline:none; width:100%; min-width:180px; }
-.page-size{ display:flex; align-items:center; gap:.45rem; color:#5b5b5b; }
-.page-size select{ padding:.45rem .6rem; border-radius:.6rem; border:1px solid #eadcd4; background:#fff; box-shadow:var(--shadow-sm); }
+.au-title{
+  margin:0;
+  font-size:1.8rem;
+  font-weight:900;
+  color:var(--au-text);
+}
+.au-sub{
+  margin:.25rem 0 0;
+  font-size:.95rem;
+  color:var(--au-sub);
+}
+.au-add-main{
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  background:var(--au-primary);
+  color:#fff;
+  border:none;
+  padding:.7rem 1.2rem;
+  border-radius:999px;
+  font-weight:800;
+  cursor:pointer;
+  box-shadow:0 14px 30px rgba(255,138,76,.25);
+  white-space:nowrap;
+}
+.au-add-main:hover{ background:var(--au-primary-dark); }
 
-.pagination{ display:flex; align-items:center; justify-content:center; gap:.6rem; margin:.9rem 0; }
-.pg-btn{ padding:.55rem .9rem; border:1px solid #eadcd4; background:#fff; border-radius:.7rem; cursor:pointer; box-shadow:var(--shadow-sm); }
-.pg-btn:hover{ box-shadow:var(--shadow-md); }
-.pg-btn:disabled{ opacity:.5; cursor:not-allowed; }
-.pg-pages{ display:flex; gap:.4rem; }
-.pg-num{ min-width:36px; height:36px; border-radius:.7rem; border:1px solid #eadcd4; background:#fff; cursor:pointer; box-shadow:var(--shadow-sm); }
-.pg-num:hover{ box-shadow:var(--shadow-md); }
-.pg-num.active{ background:var(--primary); color:#fff; border-color:transparent; }
-`;
+/* PANEL FORM */
+.au-panel{
+  background:#fff;
+  border-radius:1.1rem;
+  border:1px solid var(--au-border);
+  box-shadow:0 12px 30px rgba(0,0,0,.06);
+  margin-bottom:1.5rem;
+  overflow:hidden;
+}
+.au-panel-toggle{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:.75rem 1.1rem;
+  border:none;
+  background:linear-gradient(to right,#FFF7F1,#FFEADF);
+  font-weight:800;
+  font-size:.95rem;
+  cursor:pointer;
+  color:var(--au-text);
+}
+.au-form{
+  padding:1rem 1.1rem 1.1rem;
+  display:flex;
+  flex-direction:column;
+  gap:.75rem;
+}
+.au-form-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.75rem 1rem;
+}
+.au-label{
+  font-size:.82rem;
+  color:var(--au-sub);
+  display:flex;
+  flex-direction:column;
+  gap:.25rem;
+}
+.au-label-full{
+  grid-column:1 / -1;
+}
+.au-label input{
+  border-radius:.9rem;
+  border:1px solid var(--au-border);
+  padding:.65rem .85rem;
+  font-size:.9rem;
+  outline:none;
+}
+.au-label input:focus{
+  border-color:var(--au-primary);
+  box-shadow:0 0 0 2px rgba(255,138,76,.25);
+}
+
+/* Chips rol */
+.au-chips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.4rem;
+  margin-top:.25rem;
+}
+.au-chip{
+  border-radius:999px;
+  border:1px solid var(--au-border);
+  padding:.3rem .8rem;
+  background:#fff;
+  font-size:.8rem;
+  cursor:pointer;
+}
+.au-chip.active{
+  background:#FFEADF;
+  border-color:#FFC19A;
+  color:var(--au-primary-dark);
+  font-weight:700;
+}
+
+/* Materias */
+.au-mat-box{
+  border-radius:.9rem;
+  border:1px solid var(--au-border);
+  background:#FFF9F4;
+  padding:.25rem 0;
+  display:flex;
+  flex-direction:column;
+}
+.au-mat-item{
+  padding:.4rem .9rem;
+  border:none;
+  background:transparent;
+  text-align:left;
+  font-size:.85rem;
+  cursor:pointer;
+}
+.au-mat-item.active{
+  background:#FFEADF;
+  font-weight:700;
+  color:var(--au-primary-dark);
+}
+
+/* Alert */
+.au-alert{
+  border-radius:.7rem;
+  padding:.55rem .8rem;
+  font-size:.8rem;
+}
+.au-alert-err{
+  background:#FFE6E6;
+  border:1px solid #FFC7C7;
+  color:#991B1B;
+}
+
+/* Form buttons */
+.au-form-actions{
+  margin-top:.4rem;
+  display:flex;
+  justify-content:flex-end;
+  gap:.5rem;
+}
+.au-btn-primary,
+.au-btn-secondary{
+  padding:.55rem 1.1rem;
+  border-radius:.9rem;
+  border:none;
+  cursor:pointer;
+  font-size:.86rem;
+  font-weight:800;
+}
+.au-btn-primary{
+  background:var(--au-primary-dark);
+  color:#fff;
+}
+.au-btn-primary:disabled{
+  opacity:.7;
+  cursor:not-allowed;
+}
+.au-btn-secondary{
+  background:#FFF0E4;
+  color:var(--au-primary-dark);
+}
+
+/* CARD REGISTRO USUARIOS (solo título + filtro) */
+.au-reg-card{
+  background:#fff;
+  border-radius:1.1rem;
+  border:1px solid var(--au-border);
+  box-shadow:0 10px 25px rgba(0,0,0,.05);
+  padding:1.1rem 1.2rem 1.2rem;
+  display:flex;
+  flex-direction:column;
+  gap:.9rem;
+}
+.au-reg-header{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:1rem;
+}
+.au-list-title{
+  font-size:1rem;
+  font-weight:800;
+  margin:0;
+  color:var(--au-text);
+}
+.au-list-sub{
+  margin:.15rem 0 0;
+  font-size:.85rem;
+  color:var(--au-sub);
+}
+.au-pill-count{
+  padding:.25rem .7rem;
+  border-radius:999px;
+  background:#FFF3E9;
+  border:1px solid var(--au-border);
+  font-size:.8rem;
+  font-weight:700;
+  color:var(--au-primary-dark);
+}
+
+/* SEARCH */
+.au-search{
+  max-width:420px;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.55rem .9rem;
+  border-radius:.9rem;
+  background:#fff;
+  border:1px solid var(--au-border);
+  box-shadow:0 10px 22px rgba(0,0,0,.04);
+}
+.au-search-inline{
+  max-width:none;
+}
+.au-search input{
+  border:none;
+  outline:none;
+  flex:1;
+  font-size:.9rem;
+}
+
+/* SECCIÓN TABLA */
+.au-table-section{
+  margin-top:.7rem;
+}
+
+/* EMPTY */
+.au-empty{
+  background:var(--au-soft);
+  border-radius:1.1rem;
+  padding:1.25rem 1.1rem;
+  border:1px solid var(--au-border);
+  color:var(--au-sub);
+  font-size:.9rem;
+}
+.au-empty-inner{
+  margin-top:.1rem;
+}
+.au-empty p{ margin:.1rem 0; }
+.au-empty-hint{ font-size:.85rem; }
+.au-empty-error{
+  background:#FFE6E6;
+  border-color:#FFC7C7;
+  color:var(--au-error);
+}
+
+/* Spinner */
+.au-spinner,
+.au-spinner-sm{
+  border-radius:999px;
+  border:2px solid rgba(249,115,22,.3);
+  border-top-color:var(--au-primary-dark);
+  animation:au-spin .8s linear infinite;
+}
+.au-spinner{
+  width:22px;
+  height:22px;
+}
+.au-spinner-sm{
+  width:14px;
+  height:14px;
+}
+@keyframes au-spin{
+  to{ transform:rotate(360deg); }
+}
+
+/* TABLA */
+.au-table-wrapper{
+  border-radius:.9rem;
+  border:1px solid #F5D8CB;
+  overflow:hidden;
+}
+.au-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.86rem;
+  background:#fff;
+}
+.au-table thead{
+  background:linear-gradient(to right,#FFF7F1,#FFEADF);
+}
+.au-table th,
+.au-table td{
+  padding:.6rem .75rem;
+  text-align:left;
+  border-bottom:1px solid #F7E0D4;
+}
+.au-table th{
+  font-weight:700;
+  font-size:.78rem;
+  letter-spacing:.02em;
+  text-transform:uppercase;
+  color:#7C7C7C;
+}
+.au-table tbody tr:last-child td{
+  border-bottom:none;
+}
+.au-table tbody tr:hover{
+  background:#FFF9F4;
+}
+
+/* Celda usuario */
+.au-user-cell{
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+}
+.au-avatar{
+  width:36px;
+  height:36px;
+  border-radius:999px;
+  background:#FFF3E9;
+  border:1px solid var(--au-border);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:800;
+  color:var(--au-primary-dark);
+  flex-shrink:0;
+}
+.au-user-text{
+  display:flex;
+  flex-direction:column;
+}
+.au-name{
+  margin:0;
+  font-weight:800;
+  color:var(--au-text);
+}
+.au-phone{
+  font-size:.75rem;
+  color:var(--au-sub);
+}
+.au-email{
+  font-size:.8rem;
+  color:var(--au-sub);
+  word-break:break-all;
+}
+
+/* Rol & materia */
+.au-role-badge{
+  padding:.15rem .6rem;
+  border-radius:999px;
+  font-size:.72rem;
+  font-weight:800;
+}
+.au-materia{
+  font-size:.8rem;
+  color:var(--au-sub);
+}
+.au-materia-muted{
+  color:#D1D5DB;
+}
+
+/* Acceso & acciones */
+.au-cell-access{
+  display:flex;
+  flex-direction:column;
+  gap:.25rem;
+}
+.au-actions{
+  display:flex;
+  gap:.45rem;
+  justify-content:flex-end;
+}
+.au-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:.3rem;
+  padding:.35rem .7rem;
+  border-radius:999px;
+  font-size:.78rem;
+  font-weight:700;
+  border:1px solid transparent;
+  background:#FFF;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.au-btn svg{ width:16px; height:16px; }
+.au-btn-access{
+  background:#E8F3FF;
+  color:#245B8F;
+  border-color:#C7E2FF;
+}
+.au-btn-edit{
+  background:#FFF4E6;
+  color:var(--au-primary-dark);
+  border-color:#FBD4B4;
+}
+.au-btn-del{
+  background:#FFF1F1;
+  color:#C44242;
+  border-color:#F3C8C8;
+}
+.au-btn:disabled{
+  cursor:not-allowed;
+}
+
+/* Expiración inline */
+.au-expire-inline{
+  display:flex;
+  align-items:center;
+  gap:.3rem;
+  font-size:.72rem;
+  color:#6B7280;
+}
+
+/* Responsive */
+@media(max-width:960px){
+  .au-header-top{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+  .au-add-main{
+    align-self:stretch;
+    justify-content:center;
+  }
+  .au-form-grid{
+    grid-template-columns:1fr;
+  }
+  .au-table-wrapper{
+    border-radius:.7rem;
+    overflow-x:auto;
+  }
+  .au-table{
+    min-width:720px;
+  }
+}
+
+@media(max-width:860px){
+  .au-page{ padding:1.6rem 1rem 1.5rem; }
+}
+` as const;

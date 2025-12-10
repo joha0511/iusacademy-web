@@ -18,6 +18,10 @@ import Contacto from "./pages/Contacto";
 import Tramites from "./pages/Tramites";
 import Login from "./pages/Login";
 
+//Docente
+import DocenteLayout from "./layouts/docente/DocenteLayout";
+import DocenteHome from "./pages/docente/DocenteHome";
+
 // Admin
 import AdminLayout from "./layouts/admin/AdminLayout";
 import AdminHome from "./pages/admin/AdminHome";
@@ -76,6 +80,10 @@ export default function App() {
           <Route path="ia/tutorias" element={<EstudianteTutor />} />
           <Route path="ia/contratos" element={<EstudianteContratos />} />
           
+        </Route>
+
+        <Route path="/docente" element={<DocenteLayout />}>
+          <Route index element={<DocenteHome />} />
         </Route>
 
         {/* 404 */}

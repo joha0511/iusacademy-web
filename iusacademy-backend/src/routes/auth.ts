@@ -1,90 +1,115 @@
 // src/routes/auth.ts
-import { Router, type Request, type Response } from 'express';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
-import { prisma } from '../prisma';
-import { registerSchema, loginSchema } from '../schemas/auth';
-import { requireAuth } from '../middleware/auth';
+import { Router } from "express";
+import bcrypt from "bcryptjs";
+import { prisma } from "../prisma";
 
-export const authRouter = Router();
+const router = Router();
 
-/** Registro */
-authRouter.post('/register', async (req: Request, res: Response): Promise<void> => {
+/* POST /api/auth/login */
+router.post("/login", async (req, res) => {
   try {
-    const data = registerSchema.parse(req.body);
+    const { correo, password } = req.body;
 
-    const [byUser, byEmail] = await Promise.all([
-      prisma.user.findUnique({ where: { username: data.username } }),
-      prisma.user.findUnique({ where: { email: data.email } }),
-    ]);
-    if (byUser) { res.status(409).json({ error: 'El usuario ya existe' }); return; }
-    if (byEmail) { res.status(409).json({ error: 'El email ya existe' }); return; }
+    if (!correo || !password) {
+      return res
+        .status(400)
+        .json({ message: "Correo y contraseña son obligatorios." });
+    }
 
-    const passwordHash = await bcrypt.hash(data.password, 10);
-
-    const user = await prisma.user.create({
-      data: {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        username: data.username,
-        email: data.email,
-        passwordHash,
-        role: data.role,
-      },
-      select: {
-        id: true, firstName: true, lastName: true, username: true, email: true, role: true, createdAt: true, updatedAt: true,
-      },
+    const usuario = await prisma.user.findUnique({
+      where: { correo: correo.trim() },
     });
 
-    res.status(201).json(user);
+    if (!usuario) {
+      return res
+        .status(401)
+        .json({ message: "Correo o contraseña incorrectos." });
+    }
+
+    const isValid = await bcrypt.compare(password, usuario.passwordHash);
+    if (!isValid) {
+      return res
+        .status(401)
+        .json({ message: "Correo o contraseña incorrectos." });
+    }
+
+    if (usuario.mustChangePassword && usuario.tempPasswordExpiresAt) {
+      const now = new Date();
+      const expiresAt = new Date(usuario.tempPasswordExpiresAt);
+      if (expiresAt < now) {
+        return res.status(401).json({
+          message:
+            "Tu contraseña temporal ha expirado. Solicita un nuevo acceso al administrador.",
+        });
+      }
+    }
+
+    const forceChangePassword = usuario.mustChangePassword === true;
+
+    return res.json({
+      message: "Login correcto",
+      forceChangePassword,
+      user: {
+        id: usuario.id,
+        nombre: usuario.nombre,
+        apellidos: usuario.apellidos,
+        correo: usuario.correo,
+        telefono: usuario.telefono,
+        role: usuario.rol.toLowerCase(),
+        materia: usuario.materia,
+        mustChangePassword: usuario.mustChangePassword,
+        tempPasswordExpiresAt: usuario.tempPasswordExpiresAt,
+      },
+    });
   } catch (err: any) {
-    if (err?.name === 'ZodError') { res.status(400).json({ error: 'Datos inválidos', details: err.issues }); return; }
-    console.error(err);
-    res.status(500).json({ error: 'Error interno' });
+    console.error("Error al hacer login:", err);
+    return res.status(500).json({ message: "Error al hacer login" });
   }
 });
 
-/** Login */
-authRouter.post('/login', async (req: Request, res: Response): Promise<void> => {
+/* POST /api/auth/change-password */
+router.post("/change-password", async (req, res) => {
   try {
-    const { usernameOrEmail, password } = loginSchema.parse(req.body);
+    const { id, oldPassword, newPassword } = req.body;
 
-    const user = await prisma.user.findFirst({
-      where: { OR: [{ username: usernameOrEmail }, { email: usernameOrEmail }] },
+    if (!id || !oldPassword || !newPassword) {
+      return res.status(400).json({ message: "Datos incompletos." });
+    }
+
+    const usuario = await prisma.user.findUnique({
+      where: { id: Number(id) },
     });
-    if (!user) { res.status(401).json({ error: 'Credenciales inválidas' }); return; }
 
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) { res.status(401).json({ error: 'Credenciales inválidas' }); return; }
+    if (!usuario) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
 
-    const token = jwt.sign(
-      { sub: user.id, role: user.role },
-      process.env.JWT_SECRET as string,
-      { expiresIn: '7d' }
+    const isOldValid = await bcrypt.compare(
+      oldPassword,
+      usuario.passwordHash
     );
+    if (!isOldValid) {
+      return res
+        .status(401)
+        .json({ message: "Contraseña anterior incorrecta." });
+    }
 
-    res.cookie('token', token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false, // en prod: true con HTTPS
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+    const passwordHash = await bcrypt.hash(newPassword.trim(), 10);
+
+    await prisma.user.update({
+      where: { id: Number(id) },
+      data: {
+        passwordHash,
+        mustChangePassword: false,
+        tempPasswordExpiresAt: null,
+      },
     });
 
-    res.json({ message: 'Login OK', role: user.role });
+    return res.json({ message: "Contraseña actualizada correctamente" });
   } catch (err: any) {
-    if (err?.name === 'ZodError') { res.status(400).json({ error: 'Datos inválidos' }); return; }
-    console.error(err);
-    res.status(500).json({ error: 'Error interno' });
+    console.error("Error al cambiar contraseña:", err);
+    return res.status(500).json({ message: "Error al cambiar contraseña" });
   }
 });
 
-/** Me */
-authRouter.get('/me', requireAuth, (req: Request, res: Response): void => {
-  res.json((req as any).user);
-});
-
-/** Logout */
-authRouter.post('/logout', (_req: Request, res: Response): void => {
-  res.clearCookie('token', { httpOnly: true, sameSite: 'lax', secure: false });
-  res.json({ ok: true });
-});
+export default router;
